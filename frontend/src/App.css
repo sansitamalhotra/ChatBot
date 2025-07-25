@@ -1,0 +1,9 @@
+.App .chatIcon {
+  z-index: 500000000;
+}
+a {
+  color: #333;
+  text-decoration: none;
+  transition: color 0.3s;
+  font-family: "Titillium Web", sans-serif !important;
+}

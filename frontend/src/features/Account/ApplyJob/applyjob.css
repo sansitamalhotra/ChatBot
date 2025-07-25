@@ -1,0 +1,203 @@
+@import url('https://fonts.googleapis.com/css2?family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600&family=Ubuntu:ital,wght@0,300;0,400;0,500;0,700;1,300;1,400;1,500;1,700&display=swap');
+
+@import url('https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css');
+
+.btn__primary_login {
+    cursor: pointer;
+    background-color: #264653;
+    width: 300px;
+    height: 64px;
+    line-height: 64px;
+    transform: translate(-35%, -50%);
+    z-index: 0;
+    box-shadow: 0px 0px 17px 1px #264653;
+    border-radius: 15px 15px 0 15px;
+    font-family: 'Titillium Web', sans-serif !important;
+  }
+  .btn__primary_login span {
+    color: #fff;
+    display: block;
+    padding-left: 35px;
+    text-transform: uppercase;
+    font: bold 18px/66px Arial;
+    transform: scaleX(0.6);
+    letter-spacing: 3px;
+    transform-origin: center left;
+    transition: color 0.3s ease;
+    position: relative;
+    z-index: 1;
+    font-family: 'Titillium Web', sans-serif !important;
+  }
+  .btn__primary_login em {
+    position: absolute;
+    height: 1px;
+    background: #fff;
+    width: 37%;
+    right: 23px;
+    top: 50%;
+    transform: scaleX(0.25);
+    transform-origin: center right;
+    transition: all 0.3s ease;
+    z-index: 1;
+    font-family: 'Titillium Web', sans-serif !important;
+  }
+  .btn__primary_login:before,
+  .btn__primary_login:after {
+    content: '';
+    background: #fff;
+    height: 50%;
+    width: 0;
+    position: absolute;
+    transition: 0.3s cubic-bezier(0.785, 0.135, 0.15, 0.86);
+    font-family: 'Titillium Web', sans-serif !important;
+  }
+  .btn__primary_login:before {
+    top: 0;
+    left: 0;
+    right: auto;
+  }
+  .btn__primary_login:after {
+    bottom: 0;
+    right: 0;
+    left: auto;
+  }
+  .btn__primary_login:hover:before {
+    width: 100%;
+    right: 0;
+    left: auto;
+    border-radius: 0 15px 0 0;
+  }
+  .btn__primary_login:hover:after {
+    width: 100%;
+    left: 0;
+    right: auto;
+  }
+  .btn__primary_login:hover span {
+    color: #264653;
+  }
+  .btn__primary_login:hover em {
+    background: #264653;
+    transform: scaleX(1);
+  }
+
+  .btn__primary_register {
+    display: inline-block;
+    cursor: pointer;
+    color: #fff !important;
+    background: #264653;
+    border: 1px solid #264653;
+    margin: 0;
+    border-radius: 15px 15px 0 15px;
+    padding: 15px 30px;
+    white-space: nowrap;
+    text-align: center;
+    font-weight: 500;
+    -webkit-transition: all 0.3s ease;
+    -moz-transition: all 0.3s ease;
+    transition: all 0.3s ease;
+    font-size: 16px;
+    font-family: 'Titillium Web', sans-serif !important;
+  }
+  
+  .btn__primary_register:hover,
+  .btn__primary_register:active {
+    color: #fff !important;
+    background: #2a2a2a;
+    border-color: #2a2a2a;
+    text-decoration: none;
+    font-family: 'Titillium Web', sans-serif !important;
+  }
+
+
+.form_input .showPassword{
+    position: absolute;
+    right: 0;
+    top:1px;
+    padding: 7px 10px;
+    margin-right: 5px;
+    margin-top: 12px;
+    font-size: 14px;
+    font-weight: 600;
+    color: #2a4365;
+    background-color: #EDF2F7;
+    border-radius: 5px;
+    cursor: pointer;
+}
+
+.form_data form .form_input input:focus{
+  border:2px solid rgba(66, 153, 225,0.6) !important;
+}
+/* ======================== Toastify Styling ========================== */
+
+  .toast.error {
+    border: 1px solid #EB5757;
+    border-radius: 50px !important;
+    background: #FAE1E2 !important;
+    font-family: 'Titillium Web', sans-serif !important;
+}
+
+.cursor-pointer {
+
+  cursor: pointer !important;
+}
+
+/* ======================== Toastify Styling ========================== */
+.authbtncancel {
+  border: none;
+  width: 152px;
+  height: 40px;
+  margin: auto;
+  margin-top: 29px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;    
+  background: #f11a09;
+  font-size: 13px;
+  color: #fff;
+  text-transform: uppercase;
+  font-family: 'Titillium Web', sans-serif;
+  border-radius: 20px;
+  overflow: hidden;
+  -webkit-transform: perspective(1px) translateZ(0);
+  transform: perspective(1px) translateZ(0);
+  box-shadow: 0 0 1px rgba(0, 0, 0, 0);
+  position: relative;
+  -webkit-transition-property: color;
+  transition-property: color;
+  -webkit-transition-duration: 0.5s;
+  transition-duration: 0.5s;
+}
+
+.authbtncancel:before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: #3559e0;
+  -webkit-transform: scaleX(0);
+  transform: scaleX(0);
+  -webkit-transform-origin: 0 50%;
+  transform-origin: 0 50%;
+  -webkit-transition-property: transform;
+  transition-property: transform;
+  -webkit-transition-duration: 0.5s;
+  transition-duration: 0.5s;
+  -webkit-transition-timing-function: ease-out;
+  transition-timing-function: ease-out;
+}
+
+.authbtncancel:hover:before {
+  -webkit-transform: scaleX(1);
+  transform: scaleX(1);
+  -webkit-transition-timing-function: cubic-bezier(0.52, 1.64, 0.37, 0.66);
+  transition-timing-function: cubic-bezier(0.52, 1.64, 0.37, 0.66);
+}
+
+.authbtncancel:hover {
+  color:#fff !important;
+}

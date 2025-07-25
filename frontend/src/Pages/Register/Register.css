@@ -1,0 +1,321 @@
+@import url('https://fonts.googleapis.com/css2?family=Titillium+Web:ital,wght@0,200;0,300;0,400;0,600;0,700;0,900;1,200;1,300;1,400;1,600&family=Ubuntu:ital,wght@0,300;0,400;0,500;0,700;1,300;1,400;1,500;1,700&display=swap');
+
+.loginFormInput {
+    background-color: #f2eef3;
+    border-radius: 50px !important;
+    padding: 12px 15px 12px 15px !important;
+    width: 100% !important; /* Changed from 90% to 100% for better responsiveness */
+    box-sizing: border-box;
+    border: none !important;
+    border: 1px solid #F3E5F5 !important;
+    font-size: 16px !important;
+    color: #000 !important;
+    font-weight: 400;
+    font-family: "Titillium Web", sans-serif !important;
+}
+
+.loginFormInput:focus {
+    -moz-box-shadow: none !important;
+    -webkit-box-shadow: none !important;
+    box-shadow: none !important;
+    border: 1px solid #D500F9 !important;
+    outline-width: 0;
+    font-weight: 400;
+    font-family: "Titillium Web", sans-serif !important;
+}
+
+button:focus {
+    -moz-box-shadow: none !important;
+    -webkit-box-shadow: none !important;
+    box-shadow: none !important;
+    outline-width: 0;
+}
+
+.card {
+    border-radius: 0;
+    border: none;
+    font-family: "Titillium Web", sans-serif !important;
+}
+
+.card0 {
+    overflow: hidden; /* Prevent overflow issues on small screens */
+}
+
+.card1 {
+    width: 53%;
+    padding: 20px; /* Added padding */
+}
+
+.card2 {
+    width: 47%;
+    background-image: linear-gradient(to right, #61d7f7, #033b57);
+    display: flex; /* Added for better alignment */
+    align-items: center; /* Center content vertically */
+}
+
+.heading {
+    margin-bottom: 10px !important;
+    font-family: "Titillium Web", sans-serif !important;
+    font-size: 2.5rem; /* Use rem for better scaling */
+    padding: 30px 0; /* Adjusted padding */
+}
+
+.headingh3 h3 {
+    margin-top: 50px !important;
+}
+
+::placeholder {
+    color: #000 !important;
+    opacity: 1;
+    font-family: "Titillium Web", sans-serif !important;
+}
+
+:-ms-input-placeholder {
+    color: #000 !important;
+    font-family: "Titillium Web", sans-serif !important;
+}
+
+::-ms-input-placeholder {
+    color: #000 !important;
+    font-family: "Titillium Web", sans-serif !important;
+}
+
+.form-control-label {
+    font-size: 18px;
+    margin-left: 15px;
+    font-family: "Titillium Web", sans-serif !important;
+}
+
+.msg-info {
+    padding-left: 0; /* Removed left padding */
+    margin-bottom: 30px;
+    font-family: "Titillium Web", sans-serif !important;
+    text-align: center; /* Center the text */
+}
+
+.btn-color {
+    border-radius: 50px;
+    color: #fff;
+    background-image: linear-gradient(to right, #61d7f7, #033b57);
+    padding: 15px;
+    cursor: pointer;
+    border: none !important;
+    display: block;
+    width: 200px;
+    margin: 20px auto;
+    font-family: "Titillium Web", sans-serif !important;
+    font-size: 20px;
+}
+
+.btn-color:hover {
+    color: #fff;
+    background-image: linear-gradient(to right, #033b57, #61d7f7);
+    font-family: "Titillium Web", sans-serif !important;
+}
+
+.btn-white {
+    border-radius: 50px;
+    color: #033b57;
+    background-color: #fff;
+    padding: 8px 40px;
+    cursor: pointer;
+    border: 2px solid #033b57 !important;
+}
+
+.btn-white:hover {
+    color: #fff !important;
+    background-image: linear-gradient(to right, #61d7f7, #033b57);
+}
+
+.btn-white a {
+    color: #000;
+    font-family: "Titillium Web", sans-serif !important;
+    text-decoration: none; /* Added for better appearance */
+}
+
+.btn-white a:hover {
+    color: #fff;
+    font-family: "Titillium Web", sans-serif !important;
+}
+
+.bottom {
+    width: 100%;
+    margin-top: 3px !important;
+}
+
+.sm-text {
+    font-size: 1.25rem; /* Changed to rem for better scaling */
+}
+
+.right h3 {
+    font-size: 2rem; /* Changed to rem for better scaling */
+    font-family: "Titillium Web", sans-serif !important;
+    margin-bottom: 1rem; /* Added margin for spacing */
+}
+
+.right small {
+    font-size: 1rem; /* Changed to rem */
+    width: 100%; /* Changed from fixed width */
+    line-height: 1.6;
+    display: block; /* Ensure proper display */
+}
+
+.loginbtn button {
+    width: 150px !important;
+}
+
+.forgotpassword small {
+    font-size: 16px;
+}
+
+.form-group {
+    position: relative; /* Added for positioning of eye icons */
+    margin-bottom: 15px; /* Added spacing between form groups */
+}
+
+.form-group .absolute {
+    position: absolute;
+    right: 20px; /* Adjusted position */
+    top: 50%; /* Center vertically */
+    transform: translateY(-50%); /* Center vertically */
+    cursor: pointer;
+}
+
+/* Improved responsive design */
+@media screen and (max-width: 992px) {
+    .card1 {
+        width: 100%; /* Full width on medium screens */
+        padding: 20px;
+    }
+
+    .card2 {
+        width: 100%;
+        padding: 40px 20px;
+    }
+
+    .d-flex.flex-lg-row.flex-column-reverse {
+        flex-direction: column-reverse !important;
+    }
+
+    .right {
+        margin-top: 50px !important;
+        margin-bottom: 50px !important;
+        text-align: center; /* Center text */
+    }
+    
+    .right h3 {
+        font-size: 1.75rem; /* Smaller on medium screens */
+    }
+}
+
+@media screen and (max-width: 768px) {
+    .container-fluid {
+        padding: 10px !important;
+    }
+
+    .card2 {
+        padding: 30px 20px;
+    }
+
+    .right {
+        margin-top: 30px !important;
+        margin-bottom: 30px !important;
+    }
+    
+    .heading {
+        font-size: 2rem; /* Smaller on mobile */
+        padding: 10px 0;
+    }
+    
+    .btn-color {
+        width: 180px; /* Slightly smaller button */
+        font-size: 18px;
+    }
+    
+    .sm-text {
+        font-size: 1rem;
+    }
+}
+
+@media screen and (max-width: 576px) {
+    .card1 {
+        padding: 15px 10px;
+    }
+    
+    .heading {
+        font-size: 1.75rem; /* Even smaller on very small screens */
+        padding: 5px 0;
+    }
+    
+    .msg-info {
+        margin-bottom: 20px;
+    }
+    
+    .loginFormInput {
+        padding: 10px 15px !important;
+        font-size: 14px !important;
+    }
+    
+    .btn-color {
+        width: 160px;
+        font-size: 16px;
+        padding: 12px;
+    }
+    
+    .btn-white {
+        padding: 6px 30px;
+        font-size: 14px;
+    }
+    
+    .right h3 {
+        font-size: 1.5rem;
+    }
+    
+    .right small {
+        font-size: 0.875rem;
+    }
+}
+.registerFormInput {
+    appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  background-color: #fff;
+  color: #595959;
+  padding: 20px;
+  padding-right: 40px;
+  font-size: 14px;
+  font-family: "Helvetica", sans-serif;
+  font-weight: 300;
+  border-radius: 18px;
+  border: none;
+  box-shadow: 0px 2px 4px rgba(0, 0, 0, 0.1);
+  width: 100%;
+  max-width: 500px;
+  cursor: pointer;
+  transition: 0.3s ease;
+}
+.registerFormInput {
+    background-image: url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%204%205'%3E%3Cpath%20fill='none'%20stroke='%23595959'%20stroke-width='1'%20d='M0%200l2%202l2-2'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 20px center;
+  background-size: 10px 10px;
+  font-family: "Titillium Web", sans-serif !important;
+}
+
+.registerFormInput:focus {
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(89, 89, 89, 0.2);
+    font-family: "Titillium Web", sans-serif !important;
+}
+  
+  /* Style the options */
+.registerFormInput option {
+    padding: 20px;  
+    font-family: "Titillium Web", sans-serif !important; 
+}
+  
+  /* Optional: hovering over options in some browsers */
+.registerFormInput option:hover {
+    background-color: #e9ecef;
+    font-family: "Titillium Web", sans-serif !important;
+}
