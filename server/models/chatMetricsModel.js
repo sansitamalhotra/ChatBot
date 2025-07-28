@@ -1,4 +1,4 @@
-// models/chatMetrics.js
+//server/models/chatMetrics.js
 const mongoose = require('mongoose');
 const { Schema } = mongoose;
 

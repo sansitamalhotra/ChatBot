@@ -596,19 +596,20 @@ const changeUserPhoto = async (e) => {
 const renderProfileDetail = (label) => {
   switch (label) {
     case 'Fullname':
-      return `${auth.user.firstname} ${auth.user.lastname}`;
+      return `${auth.user?.firstname || ''} ${auth.user?.lastname || ''}`;
     case 'Email':
-      return auth.user.email;
+      return auth.user?.email || 'N/A';
     case 'Phone':
-      return auth.user.phone || 'Not provided';
+      return auth.user?.phone || 'Not provided';
     case 'Account Status':
-      return user.isVerified ? 'Verified' : 'Unverified';
+      // Defensive check for user and isVerified
+      return user && user.isVerified ? 'Verified' : 'Unverified';
     case 'Applied Jobs':
-      return user.appliedJobs?.length || 0;
+      return user && user.appliedJobs?.length ? user.appliedJobs.length : 0;
     case 'Date Joined':
-      return moment(user.registeredDate).format("MMMM Do, YYYY");
+      return user && user.registeredDate ? moment(user.registeredDate).format("MMMM Do, YYYY") : 'N/A';
     case 'Location':
-      return user.country?.countryName || 'Not specified';
+      return user && user.country?.countryName ? user.country.countryName : 'Not specified';
     default:
       return '';
   }

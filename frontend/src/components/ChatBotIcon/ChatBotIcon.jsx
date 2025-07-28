@@ -1,480 +1,472 @@
-// frontend/src/components/ChatBotIcon/ChatBotIcon.jsx
-import React, { useEffect, useRef, useState } from "react";
-import { useLocation } from "react-router-dom";
+import React, { useEffect, useRef, useState, useMemo, useCallback } from "react";
+import { Link } from "react-router-dom";
+import API from "../../helpers/API";
 import { useSocket } from "../../Context/SocketContext";
 import { useAuth } from "../../Context/AuthContext";
+import { logWithIcon } from "../../utils/consoleIcons";
 import "./ChatBotIcon.css";
 import beepUrl from "./ping";
+import FavIconLogo from "./FaviIcon-Logo.png";
+import Modal from 'react-modal';
 
-// Helper: relative time
-function timeAgo(ts) {
-  if (!ts) return "";
-  const d = new Date(ts);
-  const diff = Math.floor((Date.now() - d.getTime()) / 1000); // seconds
-  if (diff < 10) return "just now";
-  if (diff < 60) return `${diff}s`;
-  if (diff < 3600) return `${Math.floor(diff / 60)}m`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h`;
-  // older -> date
-  return d.toLocaleDateString();
-}
+Modal.setAppElement('#root');
 
 const STORAGE_USER_KEY = "chat_widget_userinfo_v1";
 const STORAGE_MESSAGES_PREFIX = "chat_widget_messages_v1_";
 
+function timeAgo(ts) {
+  if (!ts) return "";
+  const d = new Date(ts);
+  const diff = Math.floor((Date.now() - d.getTime()) / 1000);
+  if (diff < 10) return "just now";
+  if (diff < 60) return `${diff}s`;
+  if (diff < 3600) return `${Math.floor(diff / 60)}m`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h`;
+  return d.toLocaleDateString();
+}
+
+const defaultAvatar =
+  "https://img.freepik.com/premium-vector/account-icon-user-icon-vector-graphics_292645-552.jpg?w=300";
+
+const getProfileImageSrc = (userPhoto, isGuest = false) => {
+  if (isGuest) return defaultAvatar;
+  if (!userPhoto) return "";
+  const isUploadPath =
+    typeof userPhoto === "string" &&
+    userPhoto.startsWith("/uploads/userAvatars/");
+  return isUploadPath
+    ? process.env.REACT_APP_API_URL + userPhoto
+    : userPhoto;
+};
+
+async function fetchBusinessHours() {
+  try {
+    const res = await API.get(`/api/v1/businessHours/checkBusinessHoursStatus`);
+    if (res.data.success) {
+      return res.data.data;
+    }
+  } catch (err) {
+    logWithIcon.error("Failed to fetch business hours", err);
+  }
+  return null;
+}
+
 const ChatBotIcon = () => {
-  const location = useLocation();
   const { socket, isConnected } = useSocket();
   const [auth] = useAuth();
   const userFromAuth = auth?.user;
+
+  const [input, setInput] = useState("");
 
   const [isOpen, setIsOpen] = useState(false);
   const [session, setSession] = useState(null);
   const [messages, setMessages] = useState([]);
   const [quickReplies, setQuickReplies] = useState([]);
-  const [typingUsers, setTypingUsers] = useState({});
   const [businessInfo, setBusinessInfo] = useState(null);
   const [unreadCount, setUnreadCount] = useState(0);
-  const [showAutoSendModal, setShowAutoSendModal] = useState(false);
-  const [userFormSubmitted, setUserFormSubmitted] = useState(false);
+  const [showGuestForm, setShowGuestForm] = useState(false);
+  
+  const [guestInfo, setGuestInfo] = useState({
+    firstName: '',
+    lastName: '',
+    email: '',
+    phone: ''
+  });
 
-  // guest form state
-  const [guestFirstName, setGuestFirstName] = useState("");
-  const [guestLastName, setGuestLastName] = useState("");
-  const [guestEmail, setGuestEmail] = useState("");
-  const [sendDefaultIfUnavailable, setSendDefaultIfUnavailable] = useState(true);
-  const [preferredTime, setPreferredTime] = useState(""); // optional string like "09:00-17:00"
-
-  // input
-  const [input, setInput] = useState("");
-
-  const messagesEndRef = useRef(null);
   const audioRef = useRef(null);
+  const messagesEndRef = useRef(null);
 
-  // load saved user info
+  const userFormSubmitted = useMemo(
+    () => Boolean(userFromAuth || (guestInfo.firstName && guestInfo.email)),
+    [userFromAuth, guestInfo]
+  );
+
+  const storageKey = useMemo(
+    () =>
+      STORAGE_MESSAGES_PREFIX +
+      (session?._id || session?.id || "guest"),
+    [session]
+  );
+
+  /** --- Load persisted guest + messages on mount --- **/
   useEffect(() => {
     try {
       const raw = localStorage.getItem(STORAGE_USER_KEY);
       if (raw) {
         const u = JSON.parse(raw);
-        setGuestFirstName(u.firstName || "");
-        setGuestLastName(u.lastName || "");
-        setGuestEmail(u.email || "");
-        setSendDefaultIfUnavailable(!!u.sendDefaultIfUnavailable);
-        setPreferredTime(u.preferredTime || "");
-        // If we have saved user info, consider form submitted
-        if (u.firstName || u.email) {
-          setUserFormSubmitted(true);
-        }
+        setGuestInfo({
+          firstName: u.firstName || "",
+          lastName: u.lastName || "",
+          email: u.email || "",
+          phone: u.phone || ""
+        });
       }
-    } catch (e) {}
+    } catch {}
   }, []);
 
-  // Check if user form is ready (either auth user or guest info provided)
   useEffect(() => {
-    if (userFromAuth || (guestFirstName && guestEmail)) {
-      setUserFormSubmitted(true);
-    } else {
-      setUserFormSubmitted(false);
-    }
-  }, [userFromAuth, guestFirstName, guestEmail]);
-
-  // load persisted messages for current session (when session becomes available)
-  useEffect(() => {
-    const key = session ? (STORAGE_MESSAGES_PREFIX + (session._id || session.id)) : (STORAGE_MESSAGES_PREFIX + "guest");
     try {
-      const raw = localStorage.getItem(key);
+      const raw = localStorage.getItem(storageKey);
       if (raw) setMessages(JSON.parse(raw));
-    } catch (e) {}
-  }, [session]);
+    } catch {}
+  }, [storageKey]);
 
-  // persist messages on change (per-session)
   useEffect(() => {
-    const key = session ? (STORAGE_MESSAGES_PREFIX + (session._id || session.id)) : (STORAGE_MESSAGES_PREFIX + "guest");
     try {
-      localStorage.setItem(key, JSON.stringify(messages));
-    } catch (e) {}
-  }, [messages, session]);
+      localStorage.setItem(storageKey, JSON.stringify(messages));
+    } catch {}
+  }, [messages, storageKey]);
 
-  // scroll to bottom on new messages when open
+  /** --- Scroll to bottom on new messages when open --- **/
   useEffect(() => {
     if (isOpen && messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({ behavior: "smooth", block: "end" });
+      messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
     }
   }, [messages, isOpen]);
 
-  // prepare audio
+  /** --- Prepare notification sound --- **/
   useEffect(() => {
-    // If you have a file at ./ping.wav, import above. Otherwise default to a simple beep via WebAudio
-    if (beepUrl) {
-      audioRef.current = new Audio(beepUrl);
-    } else {
-      audioRef.current = null;
-    }
+    if (beepUrl) audioRef.current = new Audio(beepUrl);
   }, []);
 
-  // Auto-send behavior when session is created and business hours are closed
-  useEffect(() => {
-    if (session && businessInfo && !businessInfo.isOpen && sendDefaultIfUnavailable) {
-      // Check if we should auto-send default message
-      if (session.sessionType === "live_agent" || !session.sessionType) {
-        setShowAutoSendModal(true);
-      }
-    }
-  }, [session, businessInfo, sendDefaultIfUnavailable]);
+  /** --- Socket listeners --- **/
+  const normalizeMessage = useCallback(
+    (msg) => {
+      if (!msg) return null;
+      const id = msg._id || msg.id || `m_${Date.now()}`;
+      const text = msg.message || msg.text || "";
+      const ts = msg.createdAt || msg.timestamp || Date.now();
+      const from =
+        msg.senderType === "user"
+          ? "user"
+          : msg.senderType === "agent"
+          ? "agent"
+          : msg.senderType === "bot"
+          ? "bot"
+          : msg.from || "bot";
 
-  // socket listeners
+      const avatar =
+        msg.metadata?.senderAvatar ||
+        (from === "agent"
+          ? session?.agent?.photo || FavIconLogo
+          : from === "user"
+          ? getProfileImageSrc(userFromAuth?.photo, !userFromAuth)
+          : FavIconLogo);
+
+      return {
+        id,
+        from,
+        text,
+        timestamp: ts,
+        avatar,
+        quickReplies: msg.metadata?.quickReplies || msg.quickReplies || [],
+      };
+    },
+    [session, userFromAuth]
+  );
+
+  const handleIncomingMessage = useCallback(
+    (rawMsg) => {
+      const msg = normalizeMessage(rawMsg);
+      if (!msg) return;
+
+      setMessages((prev) => [...prev, msg]);
+      setQuickReplies(msg.quickReplies.length ? msg.quickReplies : []);
+
+      if (!isOpen) {
+        setUnreadCount((n) => n + 1);
+        try {
+          audioRef.current && audioRef.current.play().catch(() => {});
+        } catch {}
+      }
+    },
+    [normalizeMessage, isOpen]
+  );
+
   useEffect(() => {
     if (!socket) return;
 
     const onSessionCreated = (payloadRaw) => {
-      const payload = (payloadRaw && payloadRaw.body && payloadRaw.body.data && payloadRaw.body.data.session) ? payloadRaw.body.data : payloadRaw;
-      const sess = payload && (payload.session || payload._id) ? (payload.session || payload) : null;
+      const payload = payloadRaw?.body?.data || payloadRaw;
+      const sess = payload?.session || payload || null;
       if (sess) {
         setSession(sess);
-        // try reading business hours from payload
         if (payload.businessHours) setBusinessInfo(payload.businessHours);
-        if (payload.businessHoursStatus) setBusinessInfo(payload.businessHoursStatus);
       }
-      // welcomeMessage may be included
-      if (payload && payload.welcomeMessage) {
+      if (payload?.welcomeMessage) {
         handleIncomingMessage(payload.welcomeMessage);
       }
     };
 
     const onMessageNew = (msg) => handleIncomingMessage(msg);
-
-    const onMessageStatus = ({ messageId, status }) => {
-      setMessages(prev => prev.map(m => m.id === messageId ? { ...m, status } : m));
-    };
-
-    const onTyping = ({ sessionId, user, isTyping }) => {
-      if (!session) return;
-      const sid = session._id || session.id;
-      if (sessionId && sid !== sessionId) return;
-      setTypingUsers(prev => {
-        const copy = { ...prev };
-        if (isTyping) copy[user.id] = user;
-        else delete copy[user.id];
-        return copy;
-      });
-    };
+    const onMessageStatus = ({ messageId, status }) =>
+      setMessages((prev) =>
+        prev.map((m) => (m.id === messageId ? { ...m, status } : m))
+      );
 
     socket.on("session:created", onSessionCreated);
     socket.on("message:new", onMessageNew);
     socket.on("message:status", onMessageStatus);
-    socket.on("typing", onTyping);
 
     return () => {
       socket.off("session:created", onSessionCreated);
       socket.off("message:new", onMessageNew);
       socket.off("message:status", onMessageStatus);
-      socket.off("typing", onTyping);
     };
-  }, [socket, session]);
+  }, [socket, handleIncomingMessage]);
 
-  function handleIncomingMessage(msg) {
-    if (!msg) return;
-    const id = msg._id || msg.id || `m_${Date.now()}`;
-    const text = msg.message || msg.text || "";
-    const ts = msg.createdAt || msg.timestamp || Date.now();
-    const from = msg.senderType === "user" ? "user" : (msg.senderType === "agent" ? "agent" : (msg.senderType === "bot" ? "bot" : (msg.from || "bot")));
-    const avatar = msg.metadata?.senderAvatar || (from === "agent" ? (session?.agent?.photo || "/agent-avatar.png") : (from === "user" ? (userFromAuth?.photo || "/you-avatar.png") : "/bot-avatar.png"));
-    const templatePayload = msg.metadata?.templatePayload || null;
-    const messageObj = {
-      id,
-      from,
-      text,
-      timestamp: ts,
-      avatar,
-      raw: msg,
-      templatePayload,
-      quickReplies: msg.metadata?.quickReplies || msg.quickReplies || []
-    };
+  /** --- Create a new session --- **/
+  const createSession = useCallback(() => {
+    if (!socket || !socket.connected || session) return;
 
-    setMessages(prev => [...prev, messageObj]);
+    const firstName = guestInfo.firstName;
+    const lastName = guestInfo.lastName;
+    const email = guestInfo.email;
+    const phone = guestInfo.phone;
+    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
-    // set quick replies global
-    if (Array.isArray(messageObj.quickReplies) && messageObj.quickReplies.length > 0) setQuickReplies(messageObj.quickReplies);
-    else setQuickReplies([]);
+    localStorage.setItem(
+      STORAGE_USER_KEY,
+      JSON.stringify({
+        firstName,
+        lastName,
+        email,
+        phone
+      })
+    );
 
-    // If closed, increment unread and play audio
-    if (!isOpen) {
-      setUnreadCount(n => n + 1);
-      playNotificationSound();
-    }
-  }
-
-  function playNotificationSound() {
-    try {
-      if (audioRef.current) {
-        audioRef.current.play().catch(() => {});
-        return;
+    socket.emit(
+      "session:create",
+      {
+        entryPoint: "widget",
+        selectedOption: "general_inquiry",
+        timezone,
+        firstName,
+        lastName,
+        email,
+        phone,
+        guestEmail: email,
+        metadata: {
+          guestFirstName: firstName,
+          guestLastName: lastName,
+          guestPhone: phone
+        }
+      },
+      (err, result) => {
+        if (err) return console.error("session:create err", err);
+        const data = result?.body?.data || result;
+        const sess = data?.session || data || null;
+        if (sess) {
+          setSession(sess);
+          if (data.welcomeMessage) handleIncomingMessage(data.welcomeMessage);
+          if (data.businessHours) setBusinessInfo(data.businessHours);
+        }
       }
-      // fallback to simple beep via WebAudio
-      const ctx = new (window.AudioContext || window.webkitAudioContext)();
-      const o = ctx.createOscillator();
-      const g = ctx.createGain();
-      o.type = "sine";
-      o.connect(g);
-      g.connect(ctx.destination);
-      o.frequency.value = 880;
-      g.gain.value = 0.05;
-      o.start();
-      setTimeout(() => {
-        o.stop();
-        try { ctx.close(); } catch (e) {}
-      }, 120);
-    } catch (e) {}
-  }
+    );
+  }, [
+    socket,
+    session,
+    guestInfo,
+    handleIncomingMessage
+  ]);
 
-  // Create session (called when widget opens)
-  function createSession() {
-    if (!socket || !socket.connected) return;
-
-    // Prefer auth user info if present
-    let firstName = guestFirstName, lastName = guestLastName, email = guestEmail, timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    if (userFromAuth) {
-      firstName = userFromAuth.firstname || userFromAuth.firstName || firstName;
-      lastName = userFromAuth.lastname || userFromAuth.lastName || lastName;
-      email = userFromAuth.email || email;
-    }
-
-    // save local guest info
-    try {
-      localStorage.setItem(STORAGE_USER_KEY, JSON.stringify({
-        firstName, lastName, email, sendDefaultIfUnavailable, preferredTime
-      }));
-    } catch (e) {}
-
-    socket.emit("session:create", {
-      entryPoint: "widget",
-      selectedOption: "general_inquiry",
-      timezone,
-      firstName,
-      lastName,
-      email,
-      preferredTime,
-      sendDefaultIfUnavailable: !!sendDefaultIfUnavailable
-    }, (err, result) => {
-      if (err) {
-        console.error("session:create err", err);
-        return;
-      }
-      const data = (result && result.body && result.body.data) ? result.body.data : result;
-      const sess = data && (data.session || data._id) ? (data.session || data) : null;
-      if (sess) {
-        setSession(sess);
-        // server may include welcomeMessage
-        if (data.welcomeMessage) handleIncomingMessage(data.welcomeMessage);
-        if (data.businessHours) setBusinessInfo(data.businessHours);
-      }
-    });
-  }
-
-  // Send chat message (text)
-  function sendMessage() {
+  /** --- Send message --- **/
+  const sendMessage = useCallback(() => {
     if (!input.trim()) return;
-
     const text = input.trim();
-    // optimistic push
     const draft = {
       id: `local_${Date.now()}`,
       from: "user",
       text,
       timestamp: Date.now(),
-      avatar: (userFromAuth?.photo || "https://img.freepik.com/premium-vector/account-icon-user-icon-vector-graphics_292645-552.jpg?w=300")
+      avatar: userFromAuth
+        ? getProfileImageSrc(userFromAuth?.photo)
+        : defaultAvatar,
     };
-    setMessages(prev => [...prev, draft]);
+    setMessages((prev) => [...prev, draft]);
     setInput("");
-
     if (!socket || !socket.connected) return;
-
     socket.emit("message:send", {
-      sessionId: session ? (session._id || session.id) : null,
+      sessionId: session?._id || session?.id,
       message: text,
       messageType: "text",
-      metadata: {}
-    }, (err, result) => {
-      if (err) {
-        console.error("message:send ack err", err);
-        return;
-      }
-      const saved = result?.body?.data || result?.data || result;
-      if (saved) {
-        setMessages(prev => prev.map(m => (m.id === draft.id ? {
-          id: saved._id || `m_${Date.now()}`,
-          from: "user",
-          text: saved.message || text,
-          timestamp: saved.createdAt || Date.now(),
-          avatar: (userFromAuth?.photo || "/you-avatar.png"),
-          raw: saved
-        } : m)));
-      }
     });
-  }
+  }, [input, session, socket, userFromAuth]);
 
-  // Auto-send default message when business hours are closed
-  function sendDefaultMessage() {
-    if (!socket || !socket.connected || !session) return;
-
-    const defaultMessage = `Hello, I'm trying to reach you but I see you're currently outside business hours. My preferred contact time is ${preferredTime || "anytime during business hours"}. Please get back to me when you're available. Thank you!`;
-    
-    const draft = {
-      id: `local_${Date.now()}`,
-      from: "user",
-      text: defaultMessage,
-      timestamp: Date.now(),
-      avatar: (userFromAuth?.photo || "/you-avatar.png")
-    };
-    setMessages(prev => [...prev, draft]);
-
-    socket.emit("message:send", {
-      sessionId: session._id || session.id,
-      message: defaultMessage,
-      messageType: "default_outside_hours",
-      metadata: { isDefaultMessage: true, preferredTime }
-    }, (err, result) => {
-      if (err) {
-        console.error("default message send err", err);
-        return;
+  const handleQuickReply = useCallback(
+    (option) => {
+      const value = option.value || option.text || option;
+      const draft = {
+        id: `local_qr_${Date.now()}`,
+        from: "user",
+        text: option.text || value,
+        timestamp: Date.now(),
+        avatar: userFromAuth
+          ? getProfileImageSrc(userFromAuth?.photo)
+          : defaultAvatar,
+      };
+      setMessages((prev) => [...prev, draft]);
+      setQuickReplies([]);
+      if (socket && socket.connected && session) {
+        socket.emit("message:send", {
+          sessionId: session._id || session.id,
+          message: value,
+          messageType: "option_selection",
+        });
       }
-      const saved = result?.body?.data || result?.data || result;
-      if (saved) {
-        setMessages(prev => prev.map(m => (m.id === draft.id ? {
-          id: saved._id || `m_${Date.now()}`,
-          from: "user",
-          text: saved.message || defaultMessage,
-          timestamp: saved.createdAt || Date.now(),
-          avatar: (userFromAuth?.photo || "/you-avatar.png"),
-          raw: saved
-        } : m)));
-      }
-    });
+    },
+    [session, socket, userFromAuth]
+  );
 
-    setShowAutoSendModal(false);
-  }
-
-  // Quick reply handler
-  function handleQuickReply(qr) {
-    const value = qr?.value || qr;
-    if (value === "live_agent") {
-      requestAgent();
-      return;
-    }
-    if (!socket || !socket.connected) return;
-    socket.emit("message:send", {
-      sessionId: session ? (session._id || session.id) : null,
-      message: value,
-      messageType: "option_selection",
-      metadata: {}
-    });
-  }
-
-  function requestAgent() {
-    if (!socket || !socket.connected || !session) return;
-    socket.emit("session:transfer", { sessionId: session._id || session.id }, (err, res) => {
-      if (err) console.error("request agent err", err);
-    });
-  }
-
-  // Handle user form submission
-  function handleUserFormSubmit() {
-    setUserFormSubmitted(true);
-    createSession();
-  }
-
-  // Template renderer (cards/list/kv)
-  const renderTemplatePayload = (payload) => {
-    if (!payload) return null;
-    const { type, items } = payload;
-    if (type === "cards" && Array.isArray(items)) {
-      return (
-        <div className="template-cards">
-          {items.map((card, i) => (
-            <div className="template-card" key={i}>
-              {card.image && <div className="card-image" style={{ backgroundImage: `url(${card.image})` }} />}
-              <div className="card-body">
-                {card.title && <div className="card-title">{card.title}</div>}
-                {card.subtitle && <div className="card-subtitle">{card.subtitle}</div>}
-                {Array.isArray(card.buttons) && (
-                  <div className="card-actions">
-                    {card.buttons.map((b, idx) => (
-                      <button key={idx} onClick={() => handleQuickReply(b)} className="quick-reply-btn small">{b.text || b}</button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
-      );
-    }
-
-    if (type === "list" && Array.isArray(items)) {
-      return <ul className="template-list">{items.map((it, idx) => <li key={idx}>{it.title || it}</li>)}</ul>;
-    }
-
-    if (type === "kv" && Array.isArray(items)) {
-      return <div className="template-kv">{items.map((it, idx) => (
-        <div className="kv-row" key={idx}><div className="kv-key">{it.key}</div><div className="kv-value">{it.value}</div></div>
-      ))}</div>;
-    }
-
-    return null;
-  };
-
-  // Render message bubble
   const renderMessage = (m) => {
+    const isUser = m.from === "user";
     return (
-      <div key={m.id} className={`chat-row ${m.from}`}>
-        <img className="msg-avatar" src={m.avatar || (m.from === "user" ? (userFromAuth?.photo || "/you-avatar.png") : "/bot-avatar.png")} alt="avatar" />
+      <div key={m.id} className={`chat-row ${isUser ? "user" : "agent-or-bot"}`}>
+        {!isUser && (
+          <img className="msg-avatar" src={m.avatar} alt={m.from} />
+        )}
         <div className="msg-body">
-          <div className={`msg-text ${m.from === "user" ? "user-bubble" : ""}`}>{m.text}</div>
-          {m.templatePayload && renderTemplatePayload(m.templatePayload)}
-          {Array.isArray(m.quickReplies) && m.quickReplies.length > 0 && (
+          <div className={`msg-text ${isUser ? "user-bubble" : ""}`}>
+            {m.text}
+          </div>
+          {m.quickReplies?.length > 0 && (
             <div className="message-quick-replies">
-              {m.quickReplies.map((qr, i) => <button key={i} className="quick-reply-btn" onClick={() => handleQuickReply(qr)}>{qr.text || qr}</button>)}
+              {m.quickReplies.map((qr, i) => (
+                <button
+                  key={i}
+                  className="quick-reply-btn"
+                  onClick={() => handleQuickReply(qr)}
+                >
+                  {qr.text || qr}
+                </button>
+              ))}
             </div>
           )}
           <div className="msg-meta">
             <span className="msg-time">{timeAgo(m.timestamp)}</span>
-            {m.status && <span className="msg-status">{m.status}</span>}
           </div>
         </div>
+        {isUser && (
+          <img
+            className="msg-avatar"
+            src={m.avatar}
+            alt="You"
+          />
+        )}
       </div>
     );
   };
 
-  // Determine input enabled (disable until user form is submitted and handle business hours)
-  const inputEnabled = (() => {
-    // First check if user form is submitted
-    if (!userFormSubmitted) return false;
+  /** --- Toggle Chat --- **/
+  const handleToggle = () => {
+    const next = !isOpen;
+    setIsOpen(next);
     
-    if (!session) return true; // allow typing while session initializing
-    if (!businessInfo) return true;
-    if (session.sessionType === "bot") return true;
-    
-    // For live agent sessions, check business hours
-    if (businessInfo.isOpen) return true;
-    
-    // If outside business hours and sendDefaultIfUnavailable is true, still allow input
-    // (user can compose their message even if agents are offline)
-    return sendDefaultIfUnavailable;
-  })();
+    if (next) {
+      setUnreadCount(0);
+      
+      
+      // Show guest form if not authenticated and no guest info
+      if (!userFromAuth && !guestInfo.email) {
+        setShowGuestForm(true);
+        return;
+      }
+
+      // Show guest form if not authenticated and no guest info
+      if (!userFromAuth && !guestInfo.email) {
+        setShowGuestForm(true);
+        return;
+      }
+      
+      if (!session && socket && socket.connected && userFormSubmitted) {
+        createSession();
+      }
+      
+      if (messages.length === 0) {
+        fetchBusinessHours().then((biz) => {
+          setBusinessInfo(biz);
+          if (biz && !biz.isOpen && biz.outsideHoursMessage) {
+            setMessages([
+              {
+                id: "outside-hours",
+                from: "bot",
+                text: biz.outsideHoursMessage,
+                timestamp: Date.now(),
+                avatar: FavIconLogo,
+                quickReplies: biz.outsideHoursOptions || [],
+              },
+            ]);
+          } else {
+            setMessages([
+              {
+                id: "welcome-fallback",
+                from: "bot",
+                text: "How can I be of service to you?",
+                timestamp: Date.now(),
+                avatar: FavIconLogo,
+                quickReplies: [
+                  { text: "What is your service?", value: "service_info" },
+                  { text: "Why should I choose you?", value: "why_choose_us" },
+                  { text: "How do I get started?", value: "getting_started" },
+                  { text: "Search Jobs", value: "search_job" },
+                  { text: "Partnership Info", value: "partner_pspl" },
+                  { text: "Application Help", value: "application_issue" },
+                  { text: "Talk to Agent", value: "live_agent" },
+                ],
+              },
+            ]);
+          }
+        });
+      }
+    }
+  };
+
+  const handleGuestFormChange = (e) => {
+    setGuestInfo({
+      ...guestInfo,
+      [e.target.name]: e.target.value
+    });
+  };
+
+  const submitGuestForm = async () => {
+    try {
+      // Save guest user to backend
+      const response = await API.post('/api/v1/guestUsers/add-guest-user', guestInfo);
+      
+      if (response.data.success) {
+        const { firstName, lastName, email, phone } = response.data.data;
+        setGuestInfo({ firstName, lastName, email, phone });
+        setShowGuestForm(false);
+        
+        // Save to localStorage
+        localStorage.setItem(STORAGE_USER_KEY, JSON.stringify({
+          firstName,
+          lastName,
+          email,
+          phone
+        }));
+        
+        // Create session after saving guest
+        if (socket && socket.connected) {
+          createSession();
+        }
+      }
+    } catch (error) {
+      console.error("Error saving guest user:", error);
+    }
+  };
+
+  const inputEnabled = userFormSubmitted;
 
   return (
     <div className="chatbot-wrapper">
-      <button className={`chatbot-toggle ${isOpen ? "open" : ""}`} onClick={() => {
-        const next = !isOpen;
-        setIsOpen(next);
-        if (next) setUnreadCount(0);
-        // When opening: if no session yet and form is submitted, create it
-        if (next && (!session) && socket && socket.connected && userFormSubmitted) {
-          createSession();
-        }
-      }}>
-        <div className="chat-toggle-inner">💬</div>
+      <button
+        className={`chatbot-toggle ${isOpen ? "open" : ""}`}
+        onClick={handleToggle}
+      >
+        <div className="chat-toggle-inner">
+          {!isOpen && <i className="fas fa-comment-dots fa-1x"></i>}
+        </div>
         {unreadCount > 0 && <div className="unread-badge">{unreadCount}</div>}
       </button>
 
@@ -482,112 +474,126 @@ const ChatBotIcon = () => {
         <div className="chatbot-box">
           <div className="chatbot-header">
             <div className="chat-header-left">
-              <div className="chat-avatar">💬</div>
+              <button
+                className="chat-close-btn"
+                onClick={() => setIsOpen(false)}
+              >
+                <i className="fas fa-chevron-down"></i>
+              </button>
+              <div className="chat-avatar">
+                <Link to="/">
+                  <img src={FavIconLogo} alt="ProsoftSynergies" />
+                </Link>
+              </div>
               <div>
                 <div className="chat-title">Chat Assistant</div>
-                <div className="chat-sub">{businessInfo ? (businessInfo.isOpen ? "We are online" : "Outside business hours") : (isConnected ? "Connected" : "Connecting...")}</div>
+                <div className="chat-sub">
+                  {businessInfo
+                    ? businessInfo.isOpen
+                      ? "We are online"
+                      : "Outside business hours"
+                    : isConnected
+                    ? "Connected"
+                    : "Connecting..."}
+                </div>
               </div>
             </div>
           </div>
 
-          {/* If no saved user info (guest) and not auth user, show form */}
-          {!userFromAuth && !userFormSubmitted && (
-            <div className="guest-form">
-              <div style={{ display: "flex", gap: 8 }}>
-                <input placeholder="First name *" value={guestFirstName} onChange={e => setGuestFirstName(e.target.value)} />
-                <input placeholder="Last name" value={guestLastName} onChange={e => setGuestLastName(e.target.value)} />
-              </div>
-              <div style={{ marginTop: 8 }}>
-                <input placeholder="Email *" value={guestEmail} onChange={e => setGuestEmail(e.target.value)} />
-              </div>
-              <div style={{ marginTop: 8, display: "flex", gap: 8, alignItems: "center" }}>
-                <input type="checkbox" id="sendDefault" checked={sendDefaultIfUnavailable} onChange={e => setSendDefaultIfUnavailable(e.target.checked)} />
-                <label htmlFor="sendDefault">Send default message if live agents unavailable</label>
-              </div>
-              <div style={{ marginTop: 8 }}>
-                <input placeholder="Preferred contact time (e.g. 09:00-17:00)" value={preferredTime} onChange={e => setPreferredTime(e.target.value)} />
-              </div>
-              <div style={{ marginTop: 10, display: "flex", gap: 8 }}>
-                <button 
-                  onClick={handleUserFormSubmit}
-                  className="save-user-btn"
-                  disabled={!guestFirstName.trim() || !guestEmail.trim()}
-                >
-                  Start Chat
-                </button>
-                <button onClick={() => {
-                  setGuestFirstName("Guest");
-                  setGuestEmail("guest@example.com");
-                  setTimeout(() => handleUserFormSubmit(), 100);
-                }} className="save-user-btn alt">Continue as Guest</button>
-              </div>
-            </div>
-          )}
-
-          <div className="chatbot-messages" role="log" aria-live="polite">
+          <div className="chatbot-messages">
             {messages.map(renderMessage)}
             <div ref={messagesEndRef} />
           </div>
 
-          {/* Auto-send modal for outside business hours */}
-          {showAutoSendModal && (
-            <div className="auto-send-modal" style={{
-              position: "absolute",
-              top: "50%",
-              left: "50%",
-              transform: "translate(-50%, -50%)",
-              background: "white",
-              border: "1px solid #ddd",
-              borderRadius: "8px",
-              padding: "20px",
-              boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
-              zIndex: 1000,
-              maxWidth: "300px"
-            }}>
-              <h4>Outside Business Hours</h4>
-              <p>We're currently offline. Would you like to send a default message letting us know you'd like to be contacted?</p>
-              <div style={{ display: "flex", gap: 8, marginTop: 15 }}>
-                <button onClick={sendDefaultMessage} className="save-user-btn">Send Message</button>
-                <button onClick={() => setShowAutoSendModal(false)} className="save-user-btn alt">Skip</button>
-              </div>
-            </div>
-          )}
-
-          {/* quick replies global */}
-          {Array.isArray(quickReplies) && quickReplies.length > 0 && (
+          {quickReplies.length > 0 && (
             <div className="chatbot-quickreplies global">
-              {quickReplies.map((qr, i) => <button key={i} className="quick-reply-btn" onClick={() => handleQuickReply(qr)}>{qr.text || qr}</button>)}
-            </div>
-          )}
-
-          {/* business hours notice if outside and live_agent */}
-          {businessInfo && !businessInfo.isOpen && session && session.sessionType === "live_agent" && (
-            <div className="business-hours-notice">
-              Live agents are offline. Next available: {businessInfo.nextAvailable || "Unknown"}.
-              {sendDefaultIfUnavailable && " You can still send messages and we'll respond when available."}
+              {quickReplies.map((qr, i) => (
+                <button
+                  key={i}
+                  className="quick-reply-btn"
+                  onClick={() => handleQuickReply(qr)}
+                >
+                  {qr.text || qr}
+                </button>
+              ))}
             </div>
           )}
 
           <div className="chatbot-input">
             <input
               value={input}
-              onChange={e => setInput(e.target.value)}
-              placeholder={
-                !userFormSubmitted 
-                  ? "Please fill out the form above to start chatting..." 
-                  : (!businessInfo || businessInfo.isOpen || session?.sessionType === "bot") 
-                    ? "Type a message..." 
-                    : "Live agents offline — leave a message..."
-              }
-              onKeyDown={e => e.key === "Enter" && sendMessage()}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder="Type a message..."
+              onKeyDown={(e) => e.key === 'Enter' && sendMessage()}
               disabled={!inputEnabled}
             />
-            <button onClick={sendMessage} className={`send-btn ${!inputEnabled ? "disabled" : ""}`}>→</button>
+            <button
+              onClick={sendMessage}
+              className={`send-btn ${!inputEnabled ? "disabled" : ""}`}
+            >
+              →
+            </button>
           </div>
         </div>
       )}
+
+      {/* Guest Form Modal */}
+      <Modal
+        isOpen={showGuestForm}
+        onRequestClose={() => setShowGuestForm(false)}
+        className="modal"
+        overlayClassName="modal-overlay"
+      >
+        <div className="guest-form">
+          <h2>Please provide your details to start chatting</h2>
+          <div className="form-group">
+            <label>First Name</label>
+            <input
+              type="text"
+              name="firstName"
+              value={guestInfo.firstName}
+              onChange={handleGuestFormChange}
+              required
+            />
+          </div>
+          <div className="form-group">
+            <label>Last Name</label>
+            <input
+              type="text"
+              name="lastName"
+              value={guestInfo.lastName}
+              onChange={handleGuestFormChange}
+              required
+            />
+          </div>
+          <div className="form-group">
+            <label>Email</label>
+            <input
+              type="email"
+              name="email"
+              value={guestInfo.email}
+              onChange={handleGuestFormChange}
+              required
+            />
+          </div>
+          <div className="form-group">
+            <label>Phone</label>
+            <input
+              type="tel"
+              name="phone"
+              value={guestInfo.phone}
+              onChange={handleGuestFormChange}
+              required
+            />
+          </div>
+          <div className="form-actions">
+            <button onClick={submitGuestForm}>Submit</button>
+            <button onClick={() => setShowGuestForm(false)}>Cancel</button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
-};
+}
 
 export default ChatBotIcon;

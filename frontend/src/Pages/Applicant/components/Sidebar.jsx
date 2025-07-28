@@ -74,7 +74,7 @@ const Sidebar = ({ isOpen }) => {
             </div>
           </li>
           <li className="nav-item">
-            <Link className="nav-link" to={`/Profile/${auth?.user?.userId}`}>
+            <Link className="nav-link" to={`/Applicant/Profile/${auth?.user?.userId}`}>
               <span className="menu-title">Profile</span>
               <i className="mdi mdi-account-network menu-icon"></i>
             </Link>

@@ -1,3 +1,4 @@
+//frontend/src/Context/AuthContext.jsx
 import React, { useState, useEffect, useContext, createContext } from "react";
 import API from "../helpers/API";
 
@@ -17,19 +18,20 @@ const AuthProvider = ({ children }) => {
 
     useEffect(() => {
         const initializeAuth = () => {
-            try {
+           try {
                 const data = localStorage.getItem("userAuthDetails");
                 if (data) {
-                    const parseData = JSON.parse(data);
-                    if (parseData.user && parseData.token) {
-                        setAuth({ 
-                            user: parseData.user, 
-                            token: parseData.token 
-                        });
-                    }
+                const parseData = JSON.parse(data);
+                if (parseData.user && parseData.token) {
+                    // Ensure user has both _id and userId
+                    const user = {
+                    ...parseData.user,
+                    _id: parseData.user._id || parseData.user.userId,
+                    userId: parseData.user.userId || parseData.user._id
+                    };
+                    setAuth({ user, token: parseData.token });
                 }
-            } catch (error) {
-                localStorage.removeItem("userAuthDetails");
+                }
             } finally {
                 setIsInitialized(true);
             }

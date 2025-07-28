@@ -240,7 +240,7 @@ const TestHomeHeader = () => {
     if (params?._id) fetchRegUserById();
   }, [params?._id]);
 
-  // Helper function to safely check photo path - FIXED: Added null/undefined checks
+  // Helper function to safely check photo path
   const getProfileImageSrc = (userPhoto) => {
     if (!userPhoto) return ''; // Return empty string if no photo
     
@@ -249,7 +249,7 @@ const TestHomeHeader = () => {
     return isUploadPath ? process.env.REACT_APP_API_URL + userPhoto : userPhoto;
   };
 
-  // Helper function to safely get user name - FIXED: Added null/undefined checks
+  // Helper function to safely get user name
   const getUserDisplayName = (userObj) => {
     const firstName = userObj?.firstname || userObj?.first_name || '';
     const lastName = userObj?.lastname || userObj?.last_name || '';
@@ -339,7 +339,6 @@ const TestHomeHeader = () => {
 
   return (
     <header className={isSticky ? 'sticky' : ''}>
-
       <div className="top-bar">
         <Link to="mailto:hrpspl@prosoftsynergies.com" target="_blank" className="login-btn info-link">
           <span className="contact-text" style={{ color: "#03294f" }}>Email Us</span>
@@ -592,7 +591,7 @@ const TestHomeHeader = () => {
                           </Link>
                         </li>
                         <li>
-                          <Link to={`/Profile/${auth?.user?.userId}`} onClick={() => { window.location.href = `/Profile/${auth?.user?.userId}`; }}>
+                          <Link to={`/Applicant/Profile/${auth?.user?.userId}`} onClick={() => { window.location.href = `/Applicant/Profile/${auth?.user?.userId}`; }}>
                             <i className="mdi mdi-account-key menu-icon me-2 text-success"></i> Account
                           </Link>
                         </li>
@@ -714,7 +713,7 @@ const TestHomeHeader = () => {
                             </Link>
                           </li>
                           <li>
-                            <Link to={`/Profile/${auth?.user?.userId}`} onClick={() => { window.location.href = `/Profile/${auth?.user?.userId}`; }}>
+                            <Link to={`/Applicant/Profile/${auth?.user?.userId}`} onClick={() => { window.location.href = `/Applicant/Profile/${auth?.user?.userId}`; }}>
                               <i className="mdi mdi-account-key menu-icon me-2 text-success"></i> Account
                             </Link>
                           </li>

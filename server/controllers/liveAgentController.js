@@ -70,6 +70,46 @@ class LiveAgentController {
     }
   }
 
+  // Get logged-in admin agent (role '1')
+static async getLoggedInAdminAgent(req, res) {
+  try {
+    const adminAgent = await LiveAgent.findOne({
+      status: { $in: ['online', 'away'] }
+    })
+    .populate('userId', 'firstname lastname email role')
+    .sort({ lastActive: -1 })
+    .limit(1);
+
+    if (!adminAgent || !adminAgent.userId || adminAgent.userId.role !== '1') {
+      return res.status(404).json({
+        success: false,
+        message: 'No admin agent currently available'
+      });
+    }
+
+    const adminInfo = {
+      id: adminAgent._id,
+      name: `${adminAgent.userId.firstname} ${adminAgent.userId.lastname}`.trim() || adminAgent.name,
+      email: adminAgent.userId.email,
+      status: adminAgent.status,
+      department: adminAgent.department,
+      lastActive: adminAgent.lastActive
+    };
+
+    res.json({
+      success: true,
+      data: adminInfo
+    });
+  } catch (error) {
+    console.error('Error fetching admin agent:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching admin agent information',
+      error: error.message
+    });
+  }
+}
+
   // Get agent profile
   static async getAgent(req, res) {
     try {

@@ -113,7 +113,7 @@ const SuperAdminDashboardHome = ({ userId }) => {
   const fetchAllApplicantAppliedJobs = async () => {
     try {
       setLoading(true);
-      const response = await API.get(`/api/v1/superAdmin/AppliedJobs`);
+      const response = await API.get(`/api/v1/superAdmin/applicantAppliedJobs`);
       setApplicantAppliedJobs(response.data.result);
       setTotalAppliedApplicant(response.data.totalAppliedApplicant);
       setLoading(false);

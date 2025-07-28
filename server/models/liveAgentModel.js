@@ -1,4 +1,4 @@
-// models/liveAgent.js
+//server/models/liveAgent.js
 const mongoose = require('mongoose');
 const { Schema } = mongoose;
 

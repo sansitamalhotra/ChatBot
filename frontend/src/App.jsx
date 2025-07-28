@@ -301,8 +301,8 @@ function App() {
           <Route path="/" element={<ApplicantRoute />}>
             {/* @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ */}
             <Route path="/Applicant-Profile-Dashboard" element={<TestApplicantDashboard />} />
-            <Route path={`/Profile/${auth?.user?.userId}`} element={<PageProfile />} />
-            
+            {/* <Route path={`/Profile/${auth?.user?.userId}`} element={<PageProfile />} /> */}
+            <Route path="/Applicant/Profile/:userId" element={<PageProfile />} />
             <Route path={`/Applicant-Resume-Upload/${auth?.user?.userId}`} element={<ApplicantResumeUpload />}  />
             <Route path="/User-Change-Password" element={<PageChangePassword />} />
             {/* @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ */}

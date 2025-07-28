@@ -3,17 +3,7 @@ const router = express.Router();
 const upload = require("../services/postJobFile");
 
 // Middlewares
-const { 
-    isAdmin, 
-    isRecruiter, 
-    isApplicant, 
-    requireLogin, 
-    isAuthorized, 
-    isUserAdmin, 
-    isUserRecruiter, 
-    isUser, 
-    isAdminOrSuperAdmin
-} = require("../middlewares/authMiddleware");
+const { isAdmin, isRecruiter, requireLogin, isSuperAdmin, isAdminOrSuperAdmin } = require("../middlewares/authMiddleware");
 
 const { 
     postJob,
@@ -50,8 +40,8 @@ router.get("/applicantAppliedJobs", fetchAllAppliedJobsByApplicants);
 router.get("/fetchRegUsers", fetchRegisteredUsers);
 
 // Admin/Protected routes
-router.post("/postJob", requireLogin, isAdmin, upload.single("filePath"), postJob);
-router.post("/addNewJob", requireLogin, isAdmin, upload.single("filePath"), addNewJob);
+router.post("/postJob", requireLogin, isAdminOrSuperAdmin, upload.single("filePath"), postJob);
+router.post("/addNewJob", requireLogin, isAdminOrSuperAdmin, upload.single("filePath"), addNewJob);
 router.get("/download/:slug", downloadJobFileById);
 router.get("/fetchAllFiles", fetchAllFiles);
 router.get("/fetchCountries", fetchCountriesForJobPost);
@@ -61,8 +51,8 @@ router.get("/fetchJobsByRecruiter/:userId", requireLogin, isAdminOrSuperAdmin, f
 router.get("/job-details/:slug", fetchJobByIdController);
 router.get("/job/:slug", fetchSingleJobController);
 router.get("/jobFile/:jid", fetchJobFileController);
-router.delete("/deleteJob/:slug", requireLogin, isAdmin, deleteJobController);
-router.put("/updateJob/:slug", requireLogin, isAdmin, updateJobController);
+router.delete("/deleteJob/:slug", requireLogin, isAdminOrSuperAdmin, deleteJobController);
+router.put("/updateJob/:slug", requireLogin, isAdminOrSuperAdmin, updateJobController);
 router.get("/viewJob/:slug", fetchJobBySlugController);
 
 // Filter routes

@@ -84,9 +84,9 @@ const Navbar = ({ toggleMinimize, toggleMobileSidebar }) => {
     <nav className="navbar default-layout-navbar col-lg-12 col-12 p-0 fixed-top d-flex flex-row">
           <div className="text-center navbar-brand-wrapper d-flex align-items-center justify-content-start">
             <Link className="navbar-brand brand-logo" to="/" onClick={() => {window.location.href = "/";}}>
-              <img src={LogoSvg} alt="ThinkBeyond Logo" />
+              <img src={LogoSvg} alt="ProsoftSynergies Logo" />
             </Link>
-            <Link className="navbar-brand brand-logo-mini" to="/" onClick={() => {window.location.href = "/";}}><img src={LogoSvgMini} alt="ThinkBeyond Logo" /></Link>
+            <Link className="navbar-brand brand-logo-mini" to="/" onClick={() => {window.location.href = "/";}}><img src={LogoSvgMini} alt="ProsoftSynergies Logo" /></Link>
           </div>
           <div className="navbar-menu-wrapper d-flex align-items-stretch">
             <button className="navbar-toggler navbar-toggler align-self-center" type="button" data-toggle="minimize" onClick={toggleMinimize}>
@@ -130,7 +130,7 @@ const Navbar = ({ toggleMinimize, toggleMobileSidebar }) => {
                     <i className="mdi mdi-briefcase me-2 text-success"></i> Applied Jobs 
                   </Link>
                   <div className="dropdown-divider"></div>
-                  <Link className="dropdown-item" to={`/Profile/${auth?.user?.userId}`}>
+                  <Link className="dropdown-item" to={`/Applicant/Profile/${auth?.user?.userId}`}>
                     <i className="mdi mdi-account-network me-2 text-success"></i> Account 
                   </Link>
                   <div className="dropdown-divider"></div>                  

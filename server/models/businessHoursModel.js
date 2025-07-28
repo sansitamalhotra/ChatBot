@@ -1,4 +1,4 @@
-// models/businessHours.js - COMPLETELY FIXED WITH DESCRIPTION SUPPORT
+//server/models/businessHours.js 
 const mongoose = require('mongoose');
 const { Schema } = mongoose;
 

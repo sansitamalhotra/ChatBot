@@ -17,11 +17,11 @@ const {
 
 
   // Route to Fetch Registered Users
-router.get("/fetchRegisteredUsers", requireLogin, isAdmin, fetchRegisteredUsers);
+router.get("/fetchRegisteredUsers", requireLogin, isAdminOrSuperAdmin, fetchRegisteredUsers);
 
 
 // Route to Fetch Registered User By Id From Admin Dashboard
-router.get("/fetchRegisteredUserById/:id", requireLogin, isAdmin, fetchRegisteredUserById);
+router.get("/fetchRegisteredUserById/:id", requireLogin, isAdminOrSuperAdmin, fetchRegisteredUserById);
 router.get("/applicantAppliedJobs", fetchAllAppliedJobsByApplicants);
 router.get("/fetchRegUsers", fetchRegisteredUsers);
 
