@@ -1,11 +1,7 @@
 const GuestUser = require('../models/guestUserModel');
 const { logWithIcon } = require('../services/consoleIcons');
-const EventEmitter = require('events');
-
-const guestUserEventEmitter = new EventEmitter();
 
 module.exports = {
-  guestUserEventEmitter,
 
   createGuestUser: async (req, res) => {
     try {

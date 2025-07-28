@@ -7,6 +7,7 @@ const LiveAgent = require('../models/liveAgentModel');
 const BusinessHours = require('../models/businessHoursModel');
 const encryptionService = require('../services/encryptionService');
 const { formatQuickReplies } = require('../services/socketService');
+const { sendLiveAgentNotification } = require('../services/liveAgentEmailService');
 
 const {
     logWithIcon
@@ -733,6 +734,8 @@ class ChatMessageController {
 
     static async handleOptionSelection(session, selectedOption, isBusinessHours) {
         try {
+            // Map selected option to default options
+            selectedOption = selectedOption.replace(/\s+/g, "_").toLowerCase();
             // Default responses with properly formatted quickReplies
             const defaultResponses = {
                 search_job: {
@@ -765,7 +768,17 @@ class ChatMessageController {
                 message: "How can I assist you with that?",
                 quickReplies: ['Search Jobs', 'Partnership Info', 'Talk to Agent']
             };
+
+            // if (selectedOption === "talk_to_agent") {
+            //     console.log(`Sending email for live agent request: ${email}`);
+            //     sendMail({
+            //         email,
+            //         subject: "Live Agent Request",
+            //         message: "A user has requested to speak with a live agent.",
+            //     });
+            // }
             
+
             return {
                 message: response.message,
                 messageType: 'text',
