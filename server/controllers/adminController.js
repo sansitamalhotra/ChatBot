@@ -1,7 +1,6 @@
 const multer = require("multer");
 const fs = require("fs");
 const path = require("path");
-
 const User = require("../models/userModel");
 const ApplicantJobApplication = require("../models/applicantJobApplicationModel");
 const ActivitySession = require('../models/activitySessionModel');
@@ -183,26 +182,30 @@ module.exports =
   },
   
   fetchAdminWithSession: async (req, res) => {
-    try
-    { 
-      // Find all Admins with Role: 1
+    try {
+      // Find all Admins with Role: 1 (get ALL admins, not just those with active sessions)
       const admins = await User.find({ role: 1 }).select('-password').lean();
-
-      // For each Admin, Let's Find their lastest Active Session
+      
+      // For each Admin, find their latest session (active or ended)
       const adminsWithSession = await Promise.all(admins.map(async (admin) => {
-        // Let's Find Latest Active Session for Admin User, which will be Sorted by LoginTime in Descending Order
+        // Find Latest Session for Admin User (both active and ended), sorted by LoginTime in Descending Order
         const loginLatestSession = await ActivitySession.findOne({
-          userId: mongoose.Types.ObjectId(admin._id),
-          sessionStatus: "active",
+          userId: new mongoose.Types.ObjectId(admin._id),
         }).sort({ loginTime: -1 }).lean();
-
-        return { ...admin, loginLatestSession, };
+        
+        // Return admin with session info and current status
+        return { 
+          ...admin, 
+          loginLatestSession,
+          // Ensure currentStatus is included (fallback to 'offline' if not set)
+          currentStatus: admin.currentStatus || 'offline'
+        };
       }));
-
+      
+      console.log(`Fetched ${adminsWithSession.length} admin users with session info`);
       res.status(200).json({ success: true, admins: adminsWithSession });
     }
-    catch (error) 
-    {
+    catch (error) {
       console.error("Error fetching admins with session info:", error);
       res.status(500).json({
         success: false,

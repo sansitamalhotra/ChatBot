@@ -76,18 +76,18 @@ const userSchema = new mongoose.Schema({
     default: Date.now,
   },
   country: {
-    type: ObjectId,
+    type: mongoose.Schema.Types.ObjectId,
     ref: "Country",
     required: true,
   },
   workAuthorization: {
-    type: ObjectId,
+    type: mongoose.Schema.Types.ObjectId,
     ref: "WorkAuthorization",
     required: true,
   },
   jobsPostedBy: [
     {
-      type: Schema.Types.ObjectId,
+      type: mongoose.Schema.Types.ObjectId,
       ref: "Job",
     },
   ],

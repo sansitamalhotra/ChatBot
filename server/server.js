@@ -28,9 +28,26 @@ dbConnect();
 // Core Middleware
 app.use(express.json());
 app.use(cookieParser());
+
+let allowedOrigins = [];
+if (process.env.ALLOW_ORIGINS) {
+  try {
+    allowedOrigins = JSON.parse(process.env.ALLOW_ORIGINS);
+    if (!Array.isArray(allowedOrigins)) {
+      throw new Error('ALLOW_ORIGINS is not an array');
+    }
+  } catch (err) {
+    console.error('Error parsing ALLOW_ORIGINS from .env:', err);
+    allowedOrigins = allowedOrigins;
+  }
+} else {
+  console.warn('ALLOW_ORIGINS environment variable is not set. Using default origins.');
+  allowedOrigins = allowedOrigins;
+}
+
 app.use(cors({
   credentials: true,
-  origin: ['http://localhost:3000', 'http://localhost:8000'],
+  origin: allowedOrigins,
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
 }));
 
@@ -45,120 +62,304 @@ app.use(function(req, res, next) {
 // Socket.IO Configuration for Employee Utility Time Optimization Phase 2
 const io = new Server(server, {
   cors: {
-    origin: ['http://localhost:3000',  'http://localhost:8000'],
-    methods: ['GET', 'POST'],
+    origin: allowedOrigins,
+    methods: ['GET', 'POST', 'PUT'],
     credentials: true,
   }
 });
 
-// Middleware to Authenticate Socket Connection using JWT Token that will be sent in handshake.auth.token
+
+// Socket Authentication Middleware
 io.use(async (socket, next) => {
   try {
     const token = socket.handshake.auth.token;
 
     if (!token) {
-      return next(new Error('Authentication for Hanshake Failed: Missing Token!!!'));
+      return next(new Error('Authentication Failed: Missing Token!'));
     }
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET_KEY);
-    if (!decoded || !decoded._id) {
-      return next(new Error('Authentication for Handshake Failed: Token is Invalid!!!'));
+    if (!decoded?._id) {
+      return next(new Error('Authentication Failed: Invalid Token!'));
     }
 
-    const user = await User.findById(decoded._id);
+    const user = await User.findById(decoded._id).select('-password').lean();
     if (!user) {
-      return next(new Error('Authentication for Handshake Failed: User NOT FOUND!!!'));
+      return next(new Error('Authentication Failed: User Not Found!'));
     }
 
-    socket.user = user // now we attach complete user document to socket onject
-    console.log('User Document After Socket Connection!!!: ', user);
+    // Attach user object to socket
+    socket.user = user;
     next();
 
-  }
-  catch (error) {
-    console.error('Socket.IO Authentication Failed: ', error);
-    next(new Error('Authentication Failed!!!'));
+  } catch (err) {
+    console.error('Socket Authentication Error:', err.message);
+    return next(new Error('Authentication Failed!'));
   }
 });
 
-io.on('connection', (socket) => {
-  console.log(`User Connected Successfully Via Socket: ${socket.user._id}`);
+// Helper Functions for Socket Operations
+const createUserInfo = (user) => ({
+  _id: user._id,
+  firstname: user.firstname,
+  lastname: user.lastname,
+  email: user.email,
+  role: user.role,
+  photo: user.photo,
+});
 
-  // Optionally we can join a room named by Agent/userId if we wish to target events to this particular user
-  socket.join(socket.user._id.toString());
+const findOrCreateActiveSession = async (userId) => {
+  try {
+    let session = await ActivitySession.findOne({
+      userId: new mongoose.Types.ObjectId(userId),
+      sessionStatus: 'active'
+    });
 
-  // Now we connect our socket to Listen to user Activity events, example { status: 'active' | 'idle', timestamp }
-  socket.on('user:activity', async (data) => {
-    try {
-      const userId = socket.user._id;
-      const status = data.status;
-      const now = new Date();
+    if (!session) {
+      session = new ActivitySession({
+        userId: new mongoose.Types.ObjectId(userId),
+        loginTime: new Date(),
+        sessionStatus: 'active',
+        totalIdleTime: 0,
+        totalWorkTime: 0,
+      });
+      await session.save();
+      console.log(`Created new active session for user: ${userId}`);
+    }
 
-      // Updating the User Document in terms of currentStatus and lastActivity
-      await User.findByIdAndUpdate(userId, {
-        currentStatus: status,
-        lastActivity: now,
+    return session;
+  } catch (error) {
+    console.error(`Error finding/creating session for user ${userId}:`, error);
+    throw error;
+  }
+};
+
+const getAllAdminsWithSessions = async () => {
+  try {
+    const admins = await User.find({ role: 1 }).select('-password').lean();
+    
+    const adminsWithSession = await Promise.all(admins.map(async (admin) => {
+      const loginLatestSession = await ActivitySession.findOne({
+        userId: new mongoose.Types.ObjectId(admin._id),
+      }).sort({ loginTime: -1 }).lean();
+      
+      return {
+        ...admin,
+        loginLatestSession,
+        currentStatus: admin.currentStatus || 'offline'
+      };
+    }));
+
+    return adminsWithSession;
+  } catch (error) {
+    console.error('Error fetching admins with sessions:', error);
+    throw error;
+  }
+};
+
+const updateUserStatus = async (userId, status, additionalFields = {}) => {
+  try {
+    const updateData = {
+      currentStatus: status,
+      lastActivity: new Date(),
+      ...additionalFields
+    };
+
+    await User.findByIdAndUpdate(userId, updateData, { new: true });
+    console.log(`Updated user ${userId} status to: ${status}`);
+  } catch (error) {
+    console.error(`Error updating user ${userId} status:`, error);
+    throw error;
+  }
+};
+
+// Socket.IO connection handler
+io.on('connection', async (socket) => {
+  const userId = socket.user._id.toString();
+  const isAdmin = socket.user.role === 1;
+
+  console.log(`User Connected Via Socket.IO: ${userId}, Admin: ${isAdmin}`);
+
+  // Join personal room for targeted emits
+  socket.join(userId);
+
+  try {
+    // Handle admin connections
+    if (isAdmin) {
+      socket.join('admins');
+      console.log(`Admin ${userId} joined 'admins' room`);
+
+      // Update user status to 'active' when they connect
+      await updateUserStatus(userId, 'active');
+
+      // Find or create an active session for this admin
+      const session = await findOrCreateActiveSession(userId);
+      
+      // Get the updated session as lean object
+      const loginLatestSession = await ActivitySession.findById(session._id).lean();
+
+      // Prepare user info for broadcast
+      const userInfo = createUserInfo(socket.user);
+
+      // Emit to all admins that this admin is now active
+     io.to('admins').emit('user:statusChanged', {
+        userId,
+        status,
+        loginLatestSession: updatedSession,   // session object
+        userInfo: {
+          _id: user._id,
+          firstname: user.firstname,
+          lastname: user.lastname,
+          email: user.email,
+          role: user.role,
+          photo: user.photo,
+        }
       });
 
-      // Find current active session
-      const session = await ActivitySession.findOne({ userId, sessionStatus: 'active' });
-      
-      if (!session) {
-        // No active session, optionally create or skip
+      console.log(`Emitted user:statusChanged for admin login: ${userId}`);
+
+      // Send initial admin status snapshot to the newly connected admin
+      try {
+        const adminsWithSession = await getAllAdminsWithSessions();
+        socket.emit('admin:initialStatusList', adminsWithSession);
+      } catch (err) {
+        console.error('Error sending initial admin status list:', err);
+      }
+    }
+  } catch (error) {
+    console.error(`Error handling admin connection for user ${userId}:`, error);
+  }
+
+  // Handle user activity events
+  socket.on('user:activity', async (data) => {
+    try {
+      const { status } = data;
+      const now = new Date();
+
+      if (!status) {
+        console.warn(`Invalid status received from user ${userId}`);
         return;
       }
 
+      // Update user's current status and last activity time
+      await updateUserStatus(userId, status);
+
+      // Find the current active activity session for this user
+      const session = await ActivitySession.findOne({ 
+        userId: new mongoose.Types.ObjectId(userId), 
+        sessionStatus: 'active' 
+      });
+
+      if (!session) {
+        console.warn(`No active session found for user ${userId} on activity update`);
+        return;
+      }
+
+      // Handle idle start/end times and update session totals
       if (status === 'idle') {
-      // Mark start of idle period
-      if (!session.idleStart) {
-        session.idleStart = now;
-        await session.save();
+        if (!session.idleStart) {
+          session.idleStart = now;
+          await session.save();
         }
       } else if (status === 'active') {
-        // User became active, calculate idle duration and update totals
         if (session.idleStart) {
-          const idleDurationMs = now - session.idleStart; // milliseconds
+          const idleDurationMs = now - session.idleStart;
           session.totalIdleTime = (session.totalIdleTime || 0) + idleDurationMs;
           session.idleStart = null;
 
-          // Optionally update totalWorkTime = (now - loginTime) - totalIdleTime
+          // Update total work time = total session time - idle time
           const totalSessionDuration = now - session.loginTime;
           session.totalWorkTime = totalSessionDuration - session.totalIdleTime;
 
           await session.save();
         }
       }
-      // Broadcast user status change globally (optional)
-      io.emit('user:statusChanged', { userId, status, timestamp: now });
-      console.log(`Emitted user:statusChanged for user ${userId} status ${status}`);
 
-    } catch (emitErr) {
-      console.error('Error handling user activity socket event:', emitErr);
-      console.error('Error emitting user:statusChanged:', emitErr);
+      // Reload updated session as plain object
+      const loginLatestSession = await ActivitySession.findById(session._id).lean();
+
+      // Prepare user info for frontend update
+      const userInfo = createUserInfo(socket.user);
+
+      // Emit user status update with session and user info to all admins
+      io.to('admins').emit('user:statusChanged', {
+        userId,
+        status,
+        loginLatestSession,
+        userInfo,
+      });
+
+      console.log(`Emitted user:statusChanged for user ${userId} with status: ${status}`);
+
+    } catch (err) {
+      console.error('Error in user:activity handler:', err);
     }
   });
 
-  socket.on('disconnect', async () => {
+  // Handle socket disconnect
+  socket.on('disconnect', async (reason) => {
     try {
-      console.log(`User disconnected via socket: ${socket.user._id}`);
+      const userId = socket.user._id.toString();
+      const now = new Date();
 
-      // Update user status to offline on disconnect
-      await User.findByIdAndUpdate(socket.user._id, {
+      // Update the user status to offline and other fields as needed
+      await User.findByIdAndUpdate(userId, {
         currentStatus: 'offline',
-        lastActivity: new Date(),
+        status: 'logout',
+        currentSessionId: null,
+        lastActivity: now,
+        updatedAt: now,
       });
 
-      io.emit('user:statusChanged', { userId: socket.user._id, status: 'offline', timestamp: new Date() });
-      console.log(`Emitted user:statusChanged for user ${socket.user._id} status offline`);
+      // Find the active session and mark it ended
+      const session = await ActivitySession.findOne({
+        userId,
+        sessionStatus: 'active',
+      }).sort({ loginTime: -1 });
+
+      if (session) {
+        session.logoutTime = now;
+        session.sessionStatus = 'ended';
+        await session.save();
+      }
+
+      // Reload updated session as plain object if exists
+      const loginLatestSession = session ? await ActivitySession.findById(session._id).lean() : null;
+
+      // Prepare minimal user info
+      const userInfo = {
+        _id: socket.user._id,
+        firstname: socket.user.firstname,
+        lastname: socket.user.lastname,
+        email: socket.user.email,
+        role: socket.user.role,
+        photo: socket.user.photo,
+      };
+
+      // Emit to 'admins' room the status change event
+      io.to('admins').emit('user:statusChanged', {
+        userId,
+        status: 'offline',
+        loginLatestSession,
+        userInfo,
+      });
+
+      console.log(`User ${userId} disconnected (${reason}). Emitted offline status to admins.`);
+
+    } catch (err) {
+      console.error('Error handling socket disconnect:', err);
     }
-    catch (error) {
-      console.error('Error during socket disconnect handling:', error);
-    }
+  });
+
+  // Handle connection errors
+  socket.on('error', (error) => {
+    console.error(`Socket error for user ${userId}:`, error);
   });
 });
 
 // Environment configuration
 const environment = process.env.NODE_ENV;
+//const environment = process.env.NODE_ENV_PROD;
 
 // API Routes section
 const staticPaths = {
@@ -203,6 +404,18 @@ Object.entries(staticPaths).forEach(([key, dirPath]) => {
     console.log(`Serving ${key} at ${urlPath} from ${dirPath}`);
   }
 });
+
+
+// Health check endpoint
+app.get("/health", (req, res) => {
+  res.status(200).json({
+    status: 'healthy',
+    timestamp: new Date().toISOString(),
+    environment,
+    port: PORT
+  });
+});
+
 
 app.get("/", (req, res) => {
   res.send(
@@ -297,4 +510,6 @@ server.listen(PORT, function () {
     `%%%%%%%====== ProsoftSynergies API Server is running Successfully on Port:${PORT} ${environment} MODE =======%%%%%%%%`.bgCyan.white.bold
   );
   console.log(`@@@@@@@====== Frontend static files served from: ${staticPaths.frontend} =======@@@@@@@`.bgBlue.white.bold);
+
+  console.log(`Health check available at: http://localhost:${PORT}/health`);
 });
