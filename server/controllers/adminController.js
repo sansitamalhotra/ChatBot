@@ -181,37 +181,37 @@ module.exports =
     }
   },
   
-  fetchAdminWithSession: async (req, res) => {
-    try {
-      // Find all Admins with Role: 1 (get ALL admins, not just those with active sessions)
-      const admins = await User.find({ role: 1 }).select('-password').lean();
+  // fetchAdminWithSession: async (req, res) => {
+  //   try {
+  //     // Find all Admins with Role: 1 (get ALL admins, not just those with active sessions)
+  //     const admins = await User.find({ role: 1 }).select('-password').lean();
       
-      // For each Admin, find their latest session (active or ended)
-      const adminsWithSession = await Promise.all(admins.map(async (admin) => {
-        // Find Latest Session for Admin User (both active and ended), sorted by LoginTime in Descending Order
-        const loginLatestSession = await ActivitySession.findOne({
-          userId: new mongoose.Types.ObjectId(admin._id),
-        }).sort({ loginTime: -1 }).lean();
+  //     // For each Admin, find their latest session (active or ended)
+  //     const adminsWithSession = await Promise.all(admins.map(async (admin) => {
+  //       // Find Latest Session for Admin User (both active and ended), sorted by LoginTime in Descending Order
+  //       const loginLatestSession = await ActivitySession.findOne({
+  //         userId: new mongoose.Types.ObjectId(admin._id),
+  //       }).sort({ loginTime: -1 }).lean();
         
-        // Return admin with session info and current status
-        return { 
-          ...admin, 
-          loginLatestSession,
-          // Ensure currentStatus is included (fallback to 'offline' if not set)
-          currentStatus: admin.currentStatus || 'offline'
-        };
-      }));
+  //       // Return admin with session info and current status
+  //       return { 
+  //         ...admin, 
+  //         loginLatestSession,
+  //         // Ensure currentStatus is included (fallback to 'offline' if not set)
+  //         currentStatus: admin.currentStatus || 'offline'
+  //       };
+  //     }));
       
-      console.log(`Fetched ${adminsWithSession.length} admin users with session info`);
-      res.status(200).json({ success: true, admins: adminsWithSession });
-    }
-    catch (error) {
-      console.error("Error fetching admins with session info:", error);
-      res.status(500).json({
-        success: false,
-        message: "Error fetching admins with session info",
-        error: error.message,
-      });
-    }
-  },
+  //     console.log(`Fetched ${adminsWithSession.length} admin users with session info`);
+  //     res.status(200).json({ success: true, admins: adminsWithSession });
+  //   }
+  //   catch (error) {
+  //     console.error("Error fetching admins with session info:", error);
+  //     res.status(500).json({
+  //       success: false,
+  //       message: "Error fetching admins with session info",
+  //       error: error.message,
+  //     });
+  //   }
+  // },
 }

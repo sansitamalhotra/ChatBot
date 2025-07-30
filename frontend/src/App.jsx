@@ -19,8 +19,8 @@ import styled from "styled-components";
 import "./App.css";
 
 
+import { SuperAdminRoute } from "./routes/SuperAdminRoute";
 import { AdminRoute } from "./routes/AdminRoute";
-
 import { ApplicantRoute } from "./routes/ApplicantRoute";
 import { EmployerRoute } from "./routes/EmployerRoute";
 
@@ -32,8 +32,9 @@ const ResetPassword = lazy(() => import("./features/Account/ForgotPasswordReset/
 const TestHome = lazy(() => import("./Pages/Home"));
 
 const TestAdminDashboardHome = lazy(() => import('./Pages/Admin/Home'));
-const JobSearchInterface = lazy(() => import('./Pages/JobSearchInterface'));
+const SuperAdminDashboardHome = lazy(() => import('./Pages/Super-Admin/Home'));
 
+const JobSearchInterface = lazy(() => import('./Pages/JobSearchInterface'));
 const TestLogin = lazy(() => import('./Pages/Login/Login'));
 const TestRegister = lazy(() => import('./Pages/Register/Register'));
 
@@ -195,7 +196,6 @@ useEffect(() => {
           {/* ************************************** */}
           <Route path="/" element={<TestHome />} />
           <Route path="About-Us" element={<TestAboutUs />} />
-
           <Route path="/Search-Jobs" element={<JobSearchInterface />} />
           <Route path="/Login" element={<TestLogin />} />
           <Route path="/Register" element={<TestRegister />} />
@@ -248,6 +248,37 @@ useEffect(() => {
             <Route path="/Admin/Add-Work-Authorization" element={<AddTestWorkAuthorization />} />
             <Route path="/Admin/Manage-Work-Authorizations" element={<ManageAdminTestWorkAuthorizations />} />
             <Route path="/Admin/Change-Password" element={<AdminTestChangePassword />} />
+            {/* ##################################################################### */}
+          </Route>
+
+          {/* Super Admin Routes */}
+          <Route path="/" element={<SuperAdminRoute />}>
+            {/* ##################################################################### */}
+            <Route path="/Super-Admin/Dashboard" element={<SuperAdminDashboardHome />} />
+            <Route path="/Super-Admin/Add-Job" element={<AddTestJob />} />
+            <Route path="/Super-Admin/Manage-Jobs" element={<ManageTestJobs />} />
+            <Route path="/Super-Admin/Manage-Qualifications" element={<ManageAdminJobTestQualifications />} />
+            <Route path="/Super-Admin/Add-Qualification" element={<AddTestQualification />} />
+            <Route path="/Super-Admin/Manage-Work-Experiences" element={<ManageAdminTestWorkExperiences />} />
+            <Route path="/Super-Admin/Add-Work-Experience" element={<AddTestWorkExperience />} />
+            <Route path="/Super-Admin/Manage-Work-Modes" element={<ManageAdminTestWorkModes />} />
+            <Route path="/Super-Admin/Add-Work-Mode" element={<AddTestWorkMode />} />
+            <Route path="/Super-Admin/Add-Country" element={<AddTestCountry />} />
+            <Route path="/Super-Admin/Manage-Countries" element={<ManageAdminJobTestCountries />} />
+            <Route path="/Super-Admin/Add-Province" element={<AddTestProvince />} />
+            <Route path="/Super-Admin/Manage-Provinces" element={<ManageAdminTestProvinces />} />
+            <Route path="/Super-Admin/Add-Sector" element={<AddTestSector />} />
+            <Route path="/Super-Admin/Manage-Sectors" element={<ManageAdminTestSectors />} />
+            <Route path="/Super-Admin/Add-Salary" element={<AddTestSalary />} />
+            <Route path="/Super-Admin/Manage-salaries" element={<ManageAdminTestSalaries />} />
+            
+            <Route path="/Super-Admin/All-Contact-Us-Messages" element={<AllContactUsMessages />} />
+            <Route path="/Super-Admin/View-Contact-Message/:id" element={<TestViewContactMessage />} />
+            <Route path="/Super-Admin/Email-Subscribers" element={<TestAdminSubscribers />} />
+
+            <Route path="/Super-Admin/Add-Work-Authorization" element={<AddTestWorkAuthorization />} />
+            <Route path="/Super-Admin/Manage-Work-Authorizations" element={<ManageAdminTestWorkAuthorizations />} />
+            <Route path="/Super-Admin/Change-Password" element={<AdminTestChangePassword />} />
             {/* ##################################################################### */}
           </Route>
           

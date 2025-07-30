@@ -1,0 +1,261 @@
+/* Container styles */
+.admin-users-table-container {
+  position: relative;
+  min-height: 200px;
+}
+
+/* Refresh indicator */
+.refresh-indicator {
+  position: absolute;
+  top: -40px;
+  right: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid #dee2e6;
+  border-radius: 20px;
+  padding: 8px 16px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  animation: slideInFromRight 0.3s ease-out;
+}
+
+@keyframes slideInFromRight {
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* Table enhancements */
+.table {
+  margin-bottom: 0;
+  transition: all 0.2s ease;
+}
+
+.table thead th {
+  border-bottom: 2px solid #dee2e6;
+  font-weight: 600;
+  color: #495057;
+  background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+}
+
+/* Row styles with enhanced transitions */
+.admin-row {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  border-bottom: 1px solid #f1f3f4;
+}
+
+.admin-row:hover {
+  background-color: rgba(0, 123, 255, 0.04);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 123, 255, 0.1);
+}
+
+/* Cell specific styles */
+.name-cell, .email-cell, .login-time-cell, .duration-cell, .status-cell {
+  vertical-align: middle;
+  padding: 16px 12px;
+  transition: all 0.2s ease;
+}
+
+.name-cell {
+  font-weight: 500;
+  color: #2c3e50;
+}
+
+.email-cell {
+  color: #6c757d;
+  font-size: 0.9em;
+}
+
+.duration-cell {
+  font-weight: 500;
+}
+
+/* Avatar styles */
+.admin-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid #e9ecef;
+  transition: border-color 0.2s ease;
+}
+
+.admin-row:hover .admin-avatar {
+  border-color: #007bff;
+}
+
+/* Enhanced status badge */
+.status-badge {
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-size: 0.8em;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.2s ease;
+  min-width: 80px;
+  justify-content: center;
+}
+
+.status-badge.bg-success {
+  background: linear-gradient(135deg, #28a745 0%, #20c997 100%) !important;
+  box-shadow: 0 2px 4px rgba(40, 167, 69, 0.3);
+}
+
+.status-badge.bg-warning {
+  background: linear-gradient(135deg, #ffc107 0%, #fd7e14 100%) !important;
+  box-shadow: 0 2px 4px rgba(255, 193, 7, 0.3);
+}
+
+.status-badge.bg-secondary {
+  background: linear-gradient(135deg, #6c757d 0%, #495057 100%) !important;
+  box-shadow: 0 2px 4px rgba(108, 117, 125, 0.3);
+}
+
+.status-icon {
+  font-size: 0.7em;
+  animation: pulse 2s infinite;
+}
+
+.status-badge.bg-success .status-icon {
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+/* Smooth fade-in animation for new rows */
+@keyframes fadeIn {
+  from { 
+    opacity: 0;
+    transform: translateY(20px) scale(0.95);
+    background-color: rgba(40, 167, 69, 0.1);
+  }
+  to { 
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    background-color: transparent;
+  }
+}
+
+.fade-in {
+  animation: fadeIn 0.8s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+/* Enhanced highlight animation for updated rows */
+@keyframes highlightUpdate {
+  0% { 
+    background: linear-gradient(90deg, 
+      rgba(144, 238, 144, 0.4) 0%, 
+      rgba(144, 238, 144, 0.2) 50%, 
+      rgba(144, 238, 144, 0.4) 100%);
+    box-shadow: 
+      0 0 12px rgba(144, 238, 144, 0.6),
+      inset 0 1px 0 rgba(255, 255, 255, 0.4);
+    transform: scale(1.01);
+  }
+  30% {
+    background: linear-gradient(90deg, 
+      rgba(144, 238, 144, 0.2) 0%, 
+      rgba(144, 238, 144, 0.1) 50%, 
+      rgba(144, 238, 144, 0.2) 100%);
+    box-shadow: 
+      0 0 8px rgba(144, 238, 144, 0.4),
+      inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  }
+  100% { 
+    background: transparent;
+    box-shadow: none;
+    transform: scale(1);
+  }
+}
+
+.updating-row {
+  animation: highlightUpdate 2s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+/* Loading states */
+.table-loading {
+  opacity: 0.7;
+  pointer-events: none;
+  transition: opacity 0.3s ease;
+}
+
+/* Responsive enhancements */
+@media (max-width: 768px) {
+  .refresh-indicator {
+    top: -35px;
+    padding: 6px 12px;
+    font-size: 0.8em;
+  }
+  
+  .admin-avatar {
+    width: 24px;
+    height: 24px;
+  }
+  
+  .status-badge {
+    font-size: 0.7em;
+    padding: 4px 8px;
+    min-width: 70px;
+  }
+  
+  .name-cell, .email-cell, .login-time-cell, .duration-cell, .status-cell {
+    padding: 12px 8px;
+  }
+}
+
+/* Sticky header enhancement */
+.sticky-top {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+/* Empty state styling */
+.table tbody tr td {
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+/* Smooth scrolling for table container */
+.table-responsive {
+  scrollbar-width: thin;
+  scrollbar-color: #dee2e6 transparent;
+}
+
+.table-responsive::-webkit-scrollbar {
+  height: 8px;
+  width: 8px;
+}
+
+.table-responsive::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.table-responsive::-webkit-scrollbar-thumb {
+  background-color: #dee2e6;
+  border-radius: 4px;
+}
+
+.table-responsive::-webkit-scrollbar-thumb:hover {
+  background-color: #adb5bd;
+}

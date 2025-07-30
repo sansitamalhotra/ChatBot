@@ -118,143 +118,143 @@ module.exports = {
         }
     },
     // ================= Register New User Method Ends Here ======================== //
-
     // ================= Login User Method Starts Here ======================== //
-   loginController: async (req, res) => {
-  try {
-    const { email, password } = req.body;
+  loginController: async (req, res) => {
+    try {
+      const { email, password } = req.body;
 
-    // Validate Credentials
-    if (!email || !password) { 
-      return res.status(404).send({ success: false, message: "Invalid Email or Password" });
-    }
-
-    const user = await User.findOne({ email: req.body.email });
-
-    if (!user) {
-      return res.status(404).send({ success: false, message: "Email is either not Confirmed or Registered." });
-    }
-
-    if (!user.isVerified) {
-      let token = await Token.findOne({ userId: user._id });
-      if (!token) {
-        token = await new Token({
-          userId: user._id,
-          token: crypto.randomBytes(32).toString("hex"),
-        }).save();
-
-        const url = `${process.env.FRONTEND_BASE_URL}/${user.id}/verify/${token.token}`;
-        await sendMail(user.email, "Verify Your ProSoft Email Account", url);
+      // Validate Credentials
+      if (!email || !password) { 
+        return res.status(404).send({ success: false, message: "Invalid Email or Password" });
       }
-      return res.status(400).send({
+
+      const user = await User.findOne({ email: req.body.email });
+
+      if (!user) {
+        return res.status(404).send({ success: false, message: "Email is either not Confirmed or Registered." });
+      }
+
+      if (!user.isVerified) {
+        let token = await Token.findOne({ userId: user._id });
+        if (!token) {
+          token = await new Token({
+            userId: user._id,
+            token: crypto.randomBytes(32).toString("hex"),
+          }).save();
+
+          const url = `${process.env.FRONTEND_BASE_URL}/${user.id}/verify/${token.token}`;
+          await sendMail(user.email, "Verify Your ProSoft Email Account", url);
+        }
+        return res.status(400).send({
+          success: true,
+          message: `An Email has been sent to ${user.email} to complete your Registration. Check Your email.`,
+        });
+      }
+
+      const isMatch = await user.matchPassword(password);
+      console.log("password: ", isMatch);
+
+      if (!isMatch) {
+        return res.status(400).send({ success: false, message: "Incorrect Email or Password!!" });
+      }
+
+      // Generate Token for Login/Authentication
+      const token = jwt.sign(
+        {
+          _id: user._id,
+          email: user.email,
+          firstname: user.firstname,
+          lastname: user.lastname,
+          role: user.role,
+          photo: user.photo,
+          phone: user.phone,
+          isVerified: user.isVerified,
+          isBlocked: user.isBlocked,
+          country: user.country,
+          workAuthorization: user.workAuthorization,
+          appliedJobs: user.appliedJobs,
+          jobsPostedBy: user.jobsPostedBy,
+          registeredDate: user.registeredDate,
+          status: user.status
+        },
+        `${process.env.JWT_SECRET_KEY}`,
+        { expiresIn: "7d" }
+      );
+
+      console.log("userId: ", user._id.toString());
+      console.log("token:", token);
+
+      // Create activity session - userAgent only for Admin users (role === 1)
+      const ipAddress = req.ip || req.headers['x-forwarded-for'] || '';
+      const isAdmin = (user.role === 1);
+      
+      // Prepare session data based on user role
+      const sessionData = {
+        userId: user._id,
+        loginTime: new Date(),
+        ipAddress,
+        userAgent: isAdmin ? (req.get('User-Agent') || 'unknown') : 'not-tracked', // Provide default for non-admin
+        deviceInfo: {}
+      };
+
+      const session = new ActivitySession(sessionData);
+      const savedSession = await session.save();
+
+      // Update user with login status and current session
+      const logUser = await User.findByIdAndUpdate(
+        user._id,
+        { 
+          status: 'login', 
+          currentStatus: 'active',  // Set to active when user logs in
+          currentSessionId: savedSession._id,  // Link to the current session
+          lastActivity: new Date(),
+          updatedAt: Date.now() 
+        },
+        { new: true }
+      );
+
+      res.status(200).send({
         success: true,
-        message: `An Email has been sent to ${user.email} to complete your Registration. Check Your email.`,
+        message: "You are LoggedIn Successfully!!!",
+        user: {
+          userId: user._id.toString(),
+          email: user.email,
+          firstname: user.firstname,
+          lastname: user.lastname,
+          role: user.role,
+          phone: user.phone,
+          photo: user.photo,
+          isVerified: user.isVerified,
+          isBlocked: user.isBlocked,
+          country: user.country,
+          workAuthorization: user.workAuthorization,
+          appliedJobs: user.appliedJobs,
+          jobsPostedBy: user.jobsPostedBy,
+          registeredDate: user.registeredDate,
+          status: logUser.status,
+          currentStatus: logUser.currentStatus,  // Include currentStatus in response
+        },
+        token,
+        logUser
+      });
+
+      // Log login activity asynchronously for ALL users
+      (async () => {
+        try {
+          await logActivity(user._id, savedSession._id, 'login', req, user.role);
+        } catch (err) {
+          console.error('Error logging login activity:', err);
+        }
+      })();
+
+    } catch (error) {
+      console.log(error);
+      res.status(500).send({
+        success: false,
+        message: "Something Went Wrong, SERVER Unable to Process Your Request at this Moment!!!",
       });
     }
-
-    const isMatch = await user.matchPassword(password);
-    console.log("password: ", isMatch);
-
-    if (!isMatch) {
-      return res.status(400).send({ success: false, message: "Incorrect Email or Password!!" });
-    }
-
-    // Generate Token for Login/Authentication
-    const token = jwt.sign(
-      {
-        _id: user._id,
-        email: user.email,
-        firstname: user.firstname,
-        lastname: user.lastname,
-        role: user.role,
-        photo: user.photo,
-        phone: user.phone,
-        isVerified: user.isVerified,
-        isBlocked: user.isBlocked,
-        country: user.country,
-        workAuthorization: user.workAuthorization,
-        appliedJobs: user.appliedJobs,
-        jobsPostedBy: user.jobsPostedBy,
-        registeredDate: user.registeredDate,
-        status: user.status
-      },
-      `${process.env.JWT_SECRET_KEY}`,
-      { expiresIn: "7d" }
-    );
-
-    console.log("userId: ", user._id.toString());
-    console.log("token:", token);
-
-    // Create activity session first
-    const ipAddress = req.ip || req.headers['x-forwarded-for'] || '';
-    const isAdmin = (user.role === 1);
-    const userAgent = isAdmin ? (req.get('User-Agent') || 'unknown') : null;
-    const deviceInfo = isAdmin ? {} : {};
-
-    const session = new ActivitySession({
-      userId: user._id,
-      loginTime: new Date(),
-      ipAddress,
-      userAgent,
-      deviceInfo
-    });
-    const savedSession = await session.save();
-
-    // Update user with login status and current session - FIXED HERE
-    const logUser = await User.findByIdAndUpdate(
-      user._id,
-      { 
-        status: 'login', 
-        currentStatus: 'active',  // Set to active when user logs in
-        currentSessionId: savedSession._id,  // Link to the current session
-        lastActivity: new Date(),
-        updatedAt: Date.now() 
-      },
-      { new: true }
-    );
-
-    res.status(200).send({
-      success: true,
-      message: "You are LoggedIn Successfully!!!",
-      user: {
-        userId: user._id.toString(),
-        email: user.email,
-        firstname: user.firstname,
-        lastname: user.lastname,
-        role: user.role,
-        phone: user.phone,
-        photo: user.photo,
-        isVerified: user.isVerified,
-        isBlocked: user.isBlocked,
-        country: user.country,
-        workAuthorization: user.workAuthorization,
-        appliedJobs: user.appliedJobs,
-        jobsPostedBy: user.jobsPostedBy,
-        registeredDate: user.registeredDate,
-        status: logUser.status,
-        currentStatus: logUser.currentStatus,  // Include currentStatus in response
-      },
-      token,
-      logUser
-    });
-
-    // Log login activity asynchronously
-    (async () => {
-      try {
-        await logActivity(user._id, savedSession._id, 'login', req, user.role);
-      } catch (err) {
-        console.error('Error logging login activity:', err);
-      }
-    })();
-
-  } catch (error) {
-    console.log(error);
-    res.status(500).send({
-      success: false,
-      message: "Something Went Wrong, SERVER Unable to Process Your Request at this Moment!!!",
-    });
-  }
-},
+  },
     // ================= Login User Method Ends Here ======================== //
 
     // ------------------- Verify Your Email Account Method Starts Here --------------------------- //

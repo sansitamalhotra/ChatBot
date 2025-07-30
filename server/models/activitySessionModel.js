@@ -35,7 +35,8 @@ const activitySessionSchema = new mongoose.Schema({
   },
   userAgent: {
     type: String,
-    required: true
+    required: false,
+    default: null
   },
   deviceInfo: {
     browser: String,

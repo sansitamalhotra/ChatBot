@@ -22,7 +22,7 @@ const  {
 const { fetchAllUsers, getUsers, fetchRegUsers } = require("../controllers/userController");
 
 // Middlewares
-const { isAdmin, isRecruiter, isApplicant, requireLogin, isAuthorized, isUserAdmin, isUserRecruiter, isUser, } = require("../middlewares/authMiddleware");
+const { isAdmin, isRecruiter, requireLogin, isSuperAdmin, isAdminOrSuperAdmin } = require("../middlewares/authMiddleware");
 
 
 
@@ -89,13 +89,18 @@ router.post("/Password-Reset-Link/:id/:resetToken", resetPasswordController);
 router.put("/Account/Change-Password", requireLogin, changePasswordController);
 
 
+router.put('/upload-user-photo', requireLogin, upload.single('photo'), uploadUserPhoto);
+router.get('/user-photo/:userId', requireLogin, fetchUserPhoto);
+
 // Admin Route
 router.get("/adminRoute", requireLogin, isAdmin, (req, res) => { res.status(200).send({ ok: true }); });
 router.get("/fetchRegUsers", fetchRegUsers);
 
-router.put('/upload-user-photo', requireLogin, upload.single('photo'), uploadUserPhoto);
-router.get('/user-photo/:userId', requireLogin, fetchUserPhoto);
+// Super Admin Route
+router.get("/isSuperAdminRoute", requireLogin, isSuperAdmin, (req, res) => { res.status(200).send({ ok: true }); });
 
+// Super Admin Or Admin Route
+router.get("/isAdminOrSuperAdminRoute", requireLogin, isAdminOrSuperAdmin, (req, res) => { res.status(200).send({ ok: true }); });
 
 // Protected Employer route Auth
 router.get("/employerRoute", requireLogin, isRecruiter, (req, res) => {

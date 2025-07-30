@@ -426,6 +426,7 @@ app.get("/", (req, res) => {
 // IMPORTANT: API routes must be defined BEFORE serving static files and catch-all route
 // Auth Routes
 app.use("/api/v1/admin", require("./routes/adminRoutes"));
+app.use("/api/v1/superAdmin", require("./routes/superAdminRoutes"));
 app.use("/api/v1/auth", require('./routes/authRoutes'));
 
 // Other Routes

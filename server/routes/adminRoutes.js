@@ -5,19 +5,14 @@ const router = express.Router();
 const {
     isAdmin,
     isRecruiter,
-    isApplicant,
     requireLogin,
-    isAuthorized,
-    isUserAdmin,
-    isUserRecruiter,
-    isUser,
+    isAdminOrSuperAdmin
   } = require("../middlewares/authMiddleware.js");
 
 const {
   fetchRegisteredUsers,
   fetchRegisteredUserById,
-  fetchAllAppliedJobsByApplicants,
-  fetchAdminWithSession
+  fetchAllAppliedJobsByApplicants
 } = require("../controllers/adminController.js");
 
 
@@ -31,7 +26,7 @@ router.get("/applicantAppliedJobs", fetchAllAppliedJobsByApplicants);
 router.get("/fetchRegUsers", fetchRegisteredUsers);
 
 // Route to Fetch Admins For Live status & sessions Update
-router.get("/fetchAdminWithSession", requireLogin, isAdmin, fetchAdminWithSession);
+// router.get("/fetchAdminWithSession", requireLogin, isAdmin, fetchAdminWithSession);
 
 
 module.exports = router;

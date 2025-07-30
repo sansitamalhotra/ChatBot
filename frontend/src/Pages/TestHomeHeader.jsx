@@ -12,10 +12,22 @@ import "react-toastify/dist/ReactToastify.css";
 import './Header.css';
 import Logo from './PSPL-Logo.png';
 
+// Role constants
+const ROLE_JOBSEEKER = 0;
+const ROLE_ADMIN = 1;
+const ROLE_EMPLOYER = 2;
+const ROLE_SUPERADMIN = 3;
+
 const TestHomeHeader = () => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [activeDropdown, setActiveDropdown] = useState(null);
   const [isSticky, setIsSticky] = useState(false);
+
+  const [auth] = useAuth();
+  const [user, setUser] = useState({});
+  const params = useParams();
+  const navigate = useNavigate();
+  const location = useLocation();
 
   useEffect(() => {
     const handleScroll = () => {
@@ -28,7 +40,6 @@ const TestHomeHeader = () => {
 
   const toggleMobileMenu = () => {
     setMobileMenuOpen(!mobileMenuOpen);
-    // Close active dropdown when menu is toggled
     setActiveDropdown(null);
   };
 
@@ -39,7 +50,6 @@ const TestHomeHeader = () => {
     }
   };
 
-  // Close mobile menu when a link is clicked
   const handleLinkClick = () => {
     if (window.innerWidth <= 768 && mobileMenuOpen) {
       setMobileMenuOpen(false);
@@ -48,10 +58,12 @@ const TestHomeHeader = () => {
 
   useEffect(() => {
     const handleClickOutside = (e) => {
-      if (!e.target.closest('.nav-links') && 
-          !e.target.closest('.menu-toggle') && 
-          !e.target.closest('.cta-buttons') && 
-          window.innerWidth > 768) {
+      if (
+        !e.target.closest('.nav-links') &&
+        !e.target.closest('.menu-toggle') &&
+        !e.target.closest('.cta-buttons') &&
+        window.innerWidth > 768
+      ) {
         setActiveDropdown(null);
       }
     };
@@ -71,28 +83,22 @@ const TestHomeHeader = () => {
     };
   }, []);
 
-  // =*******************************************
-  const [auth, setAuth] = useAuth();
-  const [user, setUser] = useState({});
-  const params = useParams();
-
-  const navigate = useNavigate();
-
   const notifyErr = (msg) =>
     toast.error(msg, {
       position: "top-center",
       autoClose: 20000,
       closeOnClick: true,
       pauseOnHover: true,
-      theme: "light"
+      theme: "light",
     });
+
   const notifySucc = (msg) =>
     toast.success(msg, {
       position: "top-center",
       autoClose: 20000,
       closeOnClick: true,
       pauseOnHover: true,
-      theme: "light"
+      theme: "light",
     });
 
   const fetchRegUserById = async () => {
@@ -104,40 +110,111 @@ const TestHomeHeader = () => {
     }
   };
 
-  // initial Registered User Details
   useEffect(() => {
     if (params?._id) fetchRegUserById();
   }, [params?._id]);
 
-  const handleLogout = () => {
-    setAuth({ ...auth, user: null, token: "" });
-    localStorage.removeItem("userAuthDetails");
-    notifySucc("You have Logged Out Successfully!!!");
-    navigate(location.state || "/Login");
-  };
+  // Admin menu items
+  const renderAdminMenuItems = () => (
+    <>
+      <li>
+        <Link to="/Admin/Dashboard" onClick={() => { window.location.href = "/Admin/Dashboard"; }}>
+          <i className="mdi mdi-home menu-icon me-2 text-success"></i> Dashboard
+        </Link>
+      </li>
+      <li>
+        <Link to="/Admin/Manage-Jobs" onClick={() => { window.location.href = "/Admin/Manage-Jobs"; }}>
+          <i className="mdi mdi-briefcase me-2 text-success menu-icon"></i>Manage Jobs
+        </Link>
+      </li>
+      <li>
+        <Link to="/Admin/Manage-Sectors" onClick={() => { window.location.href = "/Admin/Manage-Sectors"; }}>
+          <i className="mdi mdi-format-list-bulleted-type me-2 text-success menu-icon"></i>Job Sectors
+        </Link>
+      </li>
+      <li>
+        <Link to="/Admin/Manage-Qualifications" onClick={() => { window.location.href = "/Admin/Manage-Qualifications"; }}>
+          <i className="mdi mdi-school menu-icon me-2 text-success"></i> Job Qualifications
+        </Link>
+      </li>
+      <li>
+        <Link to="/Admin/Manage-Work-Experiences" onClick={() => { window.location.href = "/Admin/Manage-Work-Experiences"; }}>
+          <i className="mdi mdi-checkbox-multiple-marked menu-icon me-2 text-success"></i> Job Experiences
+        </Link>
+      </li>
+      <li>
+        <Link to="/Admin/Manage-Work-Modes" onClick={() => { window.location.href = "/Admin/Manage-Work-Modes"; }}>
+          <i className="mdi mdi-account-convert me-2 text-success"></i> Work Modes
+        </Link>
+      </li>
+    </>
+  );
 
-  //assigning location variable
-  const location = useLocation();
+  // Super Admin Menu Items
+   const renderSuperAdminMenuItems = () => (
+    <>
+      <li>
+        <Link to="/Super-Admin/Dashboard" onClick={() => { window.location.href = "/Super-Admin/Dashboard"; }}>
+          <i className="mdi mdi-home menu-icon me-2 text-success"></i> Dashboard
+        </Link>
+      </li>
+      <li>
+        <Link to="/Super-Admin/Manage-Jobs" onClick={() => { window.location.href = "/Super-Admin/Manage-Jobs"; }}>
+          <i className="mdi mdi-briefcase me-2 text-success menu-icon"></i>Manage Jobs
+        </Link>
+      </li>
+      <li>
+        <Link to="/Super-Admin/Manage-Sectors" onClick={() => { window.location.href = "/Super-Admin/Manage-Sectors"; }}>
+          <i className="mdi mdi-format-list-bulleted-type me-2 text-success menu-icon"></i>Job Sectors
+        </Link>
+      </li>
+      <li>
+        <Link to="/Super-Admin/Manage-Qualifications" onClick={() => { window.location.href = "/Super-Admin/Manage-Qualifications"; }}>
+          <i className="mdi mdi-school menu-icon me-2 text-success"></i> Job Qualifications
+        </Link>
+      </li>
+      <li>
+        <Link to="/Super-Admin/Manage-Work-Experiences" onClick={() => { window.location.href = "/Super-Admin/Manage-Work-Experiences"; }}>
+          <i className="mdi mdi-checkbox-multiple-marked menu-icon me-2 text-success"></i> Job Experiences
+        </Link>
+      </li>
+      <li>
+        <Link to="/Super-Admin/Manage-Work-Modes" onClick={() => { window.location.href = "/Super-Admin/Manage-Work-Modes"; }}>
+          <i className="mdi mdi-account-convert me-2 text-success"></i> Work Modes
+        </Link>
+      </li>
+    </>
+  );
+
+
+  const renderLogoutItem = () => (
+    <li>
+      <LogoutNavbarLink onClick={() => { window.location.href = "/Login"; }}>
+        <i className="mdi mdi-logout me-2 text-success"></i>
+        Logout
+      </LogoutNavbarLink>
+    </li>
+  );
 
   return (
     <header className={isSticky ? 'sticky' : ''}>
       <div className="top-bar">
-        <Link to="mailto:hrpspl@prosoftsynergies.com" target="_blank" className="login-btn info-link">          
-          <span className="contact-text" style={{color: "#03294f"}}>Email Us</span>
-          <i className='fas fa-envelopes-bulk ms-1 fa-2x' style={{color: "#03294f"}}></i>
+        <Link to="mailto:hrpspl@prosoftsynergies.com" target="_blank" className="login-btn info-link">
+          <span className="contact-text" style={{ color: "#03294f" }}>Email Us</span>
+          <i className='fas fa-envelope ms-1 fa-2x' style={{ color: "#03294f" }}></i>
         </Link>
-        <Link to="https://wa.me/+15129617007" className="login-btn phone-link" target="_blank">        
-          <span className="contact-text" style={{color: "#03294f"}}>Let's Connect On WhatsApp</span>
-          <i className='fab fa-whatsapp ms-1 fa-2x' style={{color: "#03294f"}}></i>
+        <Link to="https://wa.me/+15129617007" className="login-btn phone-link" target="_blank">
+          <span className="contact-text" style={{ color: "#03294f" }}>Let's Connect On WhatsApp</span>
+          <i className='fab fa-whatsapp ms-1 fa-2x' style={{ color: "#03294f" }}></i>
         </Link>
       </div>
       <nav className={`main-nav ${isSticky ? 'sticky' : ''}`}>
         <div className="PSPL-Logo logo">
           <Link to="/"><img src={Logo} alt='ProsoftSynergies' /></Link>
         </div>
-        
-        <div 
-          className={`menu-toggle ${mobileMenuOpen ? 'active' : ''}`} 
+
+        <div
+          className={`menu-toggle ${mobileMenuOpen ? 'active' : ''}`}
           onClick={toggleMobileMenu}
           aria-label="Toggle navigation menu"
         >
@@ -145,8 +222,11 @@ const TestHomeHeader = () => {
           <span></span>
           <span></span>
         </div>
-        
+
         <ul className={`nav-links ${mobileMenuOpen ? 'active' : ''}`}>
+          {/* Top-level menus unchanged here */}
+          {/* ... your menus for FOR BUSINESSES, JOB SEEKERS, EMPLOYERS, ABOUT US, CONTACT US ... */}
+
           <li className={activeDropdown === 0 ? 'active' : ''}>
             <Link to="#" className="dropdown-toggle" onClick={(e) => toggleDropdown(0, e)}>
               FOR BUSINESSES
@@ -169,16 +249,14 @@ const TestHomeHeader = () => {
                 <ul>
                   <li><Link to="/Education-Recruitment" onClick={handleLinkClick}>Education Recruitment</Link></li>
                 </ul>
-              </div>              
+              </div>
               <div className="mega-menu-column">
                 <h3>Health Solutions</h3>
                 <ul>
                   <li><Link to="/Behavioral-Health-Solutions" onClick={handleLinkClick}>Behavioral Health</Link></li>
-                  <li><Link to="/Health-Billing-&-Collections-Solutions" onClick={handleLinkClick}>Heath & Billing Collections</Link></li>
+                  <li><Link to="/Health-Billing-&-Collections-Solutions" onClick={handleLinkClick}>Health & Billing Collections</Link></li>
                   <li><Link to="#" onClick={handleLinkClick}>HealthCare Mergers & Acquisitions</Link></li>
-                  <li>
-                    <Link to="#" onClick={handleLinkClick}>Behavioral Health Credentialing & Contracting</Link>
-                  </li>
+                  <li><Link to="#" onClick={handleLinkClick}>Behavioral Health Credentialing & Contracting</Link></li>
                 </ul>
               </div>
             </div>
@@ -193,28 +271,20 @@ const TestHomeHeader = () => {
                 <li><Link to="/Search-Jobs" onClick={handleLinkClick}>Search Jobs</Link></li>
                 <li>
                   {!auth.user ? (
-                    <>
-                      <Link to="/Login" onClick={handleLinkClick}>Resume Upload</Link> 
-                    </>
-                    ) : (
-                    <>
-                      {(() => {
-                        const userRole = auth.user?.role;
-                        let linkPath = "/PSPL-Access-Denied";
-
-                        if (userRole === 0) {
-                          linkPath = `/Applicant-Resume-Upload/${auth?.user?.userId}`;
-                        } else if (userRole === 1) {
-                          linkPath = "/PSPL-Access-Denied";
-                        } else if (userRole === 2) {
-                          linkPath = "/PSPL-Access-Denied";
-                        }
-                        return (
-                          <Link to={linkPath} onClick={handleLinkClick}>Resume Upload</Link> 
-                        );
-                      })()}
-                    </>
-                    )}
+                    <Link to="/Login" onClick={handleLinkClick}>Resume Upload</Link>
+                  ) : (() => {
+                    let linkPath = "/PSPL-Access-Denied";
+                    if (auth.user?.role === ROLE_JOBSEEKER) {
+                      linkPath = `/Applicant-Resume-Upload/${auth?.user?.userId}`;
+                    } else if (
+                      auth.user?.role === ROLE_ADMIN ||
+                      auth.user?.role === ROLE_EMPLOYER ||
+                      auth.user?.role === ROLE_SUPERADMIN
+                    ) {
+                      linkPath = "/PSPL-Access-Denied";
+                    }
+                    return <Link to={linkPath} onClick={handleLinkClick}>Resume Upload</Link>;
+                  })()}
                 </li>
               </ul>
             </div>
@@ -240,282 +310,255 @@ const TestHomeHeader = () => {
               <h3>Our Company</h3>
               <ul>
                 <li><Link to="/About-Us" onClick={handleLinkClick}>About Us</Link></li>
-                <li><Link to="/Who-We-Are" onClick={handleLinkClick}>Who We're </Link></li>
+                <li><Link to="/Who-We-Are" onClick={handleLinkClick}>Who We're</Link></li>
                 <li><Link to="/Our-Locations" onClick={handleLinkClick}>Locations</Link></li>
               </ul>
             </div>
           </li>
           <li><Link to="/Contact-Us" onClick={handleLinkClick}>CONTACT US</Link></li>
-          {/* Add MORE menu to mobile nav */}
-          
-          {!auth.user ? (
+
+          {/* Role-Based Mobile Menus */}
+          {!auth.user ? null : (
             <>
-              {/* <Link to="/#" className="cta-btn hPostJob-btn">Post Job</Link>
-              <Link to="/Login" className="cta-btn hLogin-btn">Login</Link> */}
-            </>
-            ) : (
-            <>
-              {auth.user?.role === 1 ? (
-                <>
-                 <li className="mobile-more-menu">
-                    <li className={activeDropdown === 4 ? 'active' : ''} style={{marginBottom: "100px"}}>
-                      <Link to="#" className="dropdown-toggle" onClick={(e) => toggleDropdown(4, e)}>
-                        {auth.user?.firstname} {" "} {auth.user?.lastname} 
-                            <i className='mdi mdi-account-check ms-3 text-primary' style={{fontSize: "25px"}}></i>
-                      </Link>
-                      <div className="mega-menu">
-                        <h3>Admin Quick Access</h3>
-                        <ul>
-                          <li>
-                              <Link to="/Admin/Dashboard" onClick={() => {window.location.href = "/Admin/Dashboard";}}>
-                                <i className="mdi mdi-home menu-icon me-2 text-success"></i> Dashboard
-                              </Link>
-                            </li>
-                            <li>
-                              <Link to="/Admin/Manage-Jobs" onClick={() => {window.location.href = "/Admin/Manage-Jobs";}}>
-                                <i className="mdi mdi-briefcase me-2 text-success menu-icon"></i>Manage Jobs
-                              </Link>
-                            </li>
-                            <li>
-                              <Link to="/Admin/Manage-Sectors" onClick={() => {window.location.href = "/Admin/Manage-Sectors";}}>
-                                <i className="mdi mdi-format-list-bulleted-type me-2 text-success menu-icon"></i>Job Sectors
-                              </Link>
-                            </li>
-                            <li>
-                              <Link to="/Admin/Manage-Qualifications" onClick={() => {window.location.href = "/Admin/Manage-Qualifications";}}>
-                                <i className="mdi mdi-school menu-icon me-2 text-success"></i> Job Qualifications
-                              </Link>
-                            </li>
-                            <li>
-                              <Link to="/Admin/Manage-Work-Experiences" onClick={() => {window.location.href = "/Admin/Manage-Work-Experiences";}}>
-                                <i className="mdi mdi-checkbox-multiple-marked menu-icon me-2 text-success"></i> Job Experieces
-                              </Link>
-                            </li>
-                            <li>
-                              <Link to="/Admin/Manage-Work-Modes" onClick={() => {window.location.href = "/Admin/Manage-Work-Modes";}}>
-                                <i className="mdi mdi-account-convert me-2 text-success"></i> Work Modes
-                              </Link>
-                            </li>
-                            <li>
-                              {/* <Link onClick={() => {window.location.href = "/Login";}}>Logout</Link> */}
-                              <LogoutNavbarLink onClick={() => {window.location.href = "/Login";}}>
-                                <i className="mdi mdi-logout me-2 text-success"></i>
-                                Logout
-                              </LogoutNavbarLink>
-                            </li>
-                        </ul>
-                      </div>
-                    </li>
+              {auth.user?.role === ROLE_ADMIN && (
+                <li className="mobile-more-menu">
+                  <li className={activeDropdown === 4 ? 'active' : ''} style={{ marginBottom: "100px" }}>
+                    <Link to="#" className="dropdown-toggle" onClick={(e) => toggleDropdown(4, e)}>
+                      {auth.user?.firstname} {" "} {auth.user?.lastname}
+                      <i className='mdi mdi-account-check ms-3 text-primary' style={{ fontSize: "25px" }}></i>
+                    </Link>
+                    <div className="mega-menu">
+                      <h3>Admin Quick Access</h3>
+                      <ul>
+                        
+                        {renderAdminMenuItems()}enderLogoutItem()}
+                      </ul>
+                    </div>
                   </li>
-                </>
-                ) : (
-                <>
-                 {auth.user?.role === 2 ? (
-                    <>
-                      <li className="mobile-more-menu">
-                        <li className={activeDropdown === 4 ? 'active' : ''} style={{marginBottom: "100px"}}>
-                          <Link to="#" className="dropdown-toggle" onClick={(e) => toggleDropdown(4, e)}>
-                            {auth.user?.firstname} {" "} {auth.user?.lastname} 
-                            <i className='mdi mdi-account-check me-2 text-primary' style={{fontSize: "25px"}}></i>
+                </li>
+              )}
+
+              {auth.user?.role === ROLE_SUPERADMIN && (
+                <li className="mobile-more-menu">
+                  <li className={activeDropdown === 5 ? 'active' : ''} style={{ marginBottom: "100px" }}>
+                    <Link to="#" className="dropdown-toggle" onClick={(e) => toggleDropdown(5, e)}>
+                      {auth.user?.firstname} {" "} {auth.user?.lastname}
+                      <i className='mdi mdi-account-check ms-3 text-primary' style={{ fontSize: "25px" }}></i>
+                    </Link>
+                    <div className="mega-menu">
+                      <h3>Super Admin Quick Access</h3>
+                      <ul>
+                        {renderSuperAdminMenuItems()} {/* Super Admin Menu Items */}
+                        {renderLogoutItem()}
+                      </ul>
+                    </div>
+                  </li>
+                </li>
+              )}
+
+              {auth.user?.role === ROLE_EMPLOYER && (
+                <li className="mobile-more-menu">
+                  <li className={activeDropdown === 4 ? 'active' : ''} style={{ marginBottom: "100px" }}>
+                    <Link to="#" className="dropdown-toggle" onClick={(e) => toggleDropdown(4, e)}>
+                      <img
+                        className="profile-image me-2"
+                        src={`${auth?.user?.photo?.startsWith('/uploads/userAvatars/') ? process.env.REACT_APP_API_URL + auth.user.photo : auth?.user?.photo || user?.photo}`}
+                        alt={`${auth?.user?.firstname} ${auth?.user?.lastname}`}
+                        aria-label="User profile photo"
+                        role="button"
+                        style={{ borderRadius: "50%", height: "35px", width: "35px" }}
+                      />
+                      {auth.user?.firstname} {" "} {auth.user?.lastname}
+                      <i className='mdi mdi-account-check ms-3 text-primary' style={{ fontSize: "25px" }}></i>
+                    </Link>
+                    <div className="mega-menu">
+                      <h3>Employer Quick Access</h3>
+                      <ul>
+                        <li>
+                          <Link to="#" onClick={handleLinkClick}>
+                            <i className="mdi mdi-home menu-icon me-2 text-success"></i> Dashboard
                           </Link>
-                          <div className="mega-menu">
-                            <h3>Employer Quick Access</h3>
-                            <ul>
-                              <li>
-                                <Link to="#" onClick={handleLinkClick}>
-                                  <i className="mdi mdi-home menu-icon me-2 text-success"></i> Dashboard
-                                </Link>
-                              </li>
-                              <li><Link to="#" onClick={handleLinkClick}>Account</Link></li>
-                              <LogoutNavbarLink onClick={() => {window.location.href = "/Login";}}>
-                                <i className="mdi mdi-logout me-2 text-success"></i>
-                                Logout
-                              </LogoutNavbarLink>
-                            </ul>
-                          </div>
                         </li>
-                      </li>
-                    </>
-                    ) : (
-                    <>
-                      <li className="mobile-more-menu">
-                        <li className={activeDropdown === 4 ? 'active' : ''} style={{marginBottom: "100px"}}>
-                          <Link to="#" className="dropdown-toggle" onClick={(e) => toggleDropdown(4, e)}>
-                            {auth.user?.firstname} {" "} {auth.user?.lastname} 
-                            <i className='mdi mdi-account-check me-2 text-primary' style={{fontSize: "25px"}}></i>
+                        <li><Link to="#" onClick={handleLinkClick}>Account</Link></li>
+                        <LogoutNavbarLink onClick={() => { window.location.href = "/Login"; }}>
+                          <i className="mdi mdi-logout me-2 text-success"></i>
+                          Logout
+                        </LogoutNavbarLink>
+                      </ul>
+                    </div>
+                  </li>
+                </li>
+              )}
+
+              {(auth.user?.role !== ROLE_ADMIN && auth.user?.role !== ROLE_SUPERADMIN && auth.user?.role !== ROLE_EMPLOYER) && (
+                <li className="mobile-more-menu">
+                  <li className={activeDropdown === 4 ? 'active' : ''} style={{ marginBottom: "100px" }}>
+                    <Link to="#" className="dropdown-toggle" onClick={(e) => toggleDropdown(4, e)}>
+                      <img
+                        className="profile-image me-2"
+                        src={`${auth?.user?.photo?.startsWith('/uploads/userAvatars/') ? process.env.REACT_APP_API_URL + auth.user.photo : auth?.user?.photo || user?.photo}`}
+                        alt={`${auth.user.firstname} ${auth.user.lastname}`}
+                        aria-label="User profile photo"
+                        role="button"
+                        style={{ borderRadius: "50%", height: "35px", width: "35px" }}
+                      />
+                      {auth.user?.firstname} {" "} {auth.user?.lastname}
+                      <i className='mdi mdi-account-check ms-3 text-primary' style={{ fontSize: "25px" }}></i>
+                    </Link>
+                    <div className="mega-menu">
+                      <h3>Job Seeker Quick Access</h3>
+                      <ul>
+                        <li>
+                          <Link to="/Applicant-Profile-Dashboard" onClick={() => { window.location.href = "/Applicant-Profile-Dashboard"; }}>
+                            <i className="mdi mdi-home menu-icon me-2 text-success"></i> Dashboard
                           </Link>
-                          <div className="mega-menu">
-                            <h3>Job Seeker Quick Access</h3>
-                            <ul>
-                              <li>
-                                <Link to="#" onClick={handleLinkClick}>
-                                  <i className="mdi mdi-home menu-icon me-2 text-success"></i> Dashboard
-                                </Link>
-                              </li>
-                              <li>
-                                <Link to="#" onClick={handleLinkClick}>
-                                  <i className="mdi mdi-account-key menu-icon me-2 text-success"></i> Account
-                                </Link>
-                              </li>
-                              <LogoutNavbarLink onClick={() => {window.location.href = "/Login";}}>
-                                <i className="mdi mdi-logout me-2 text-success"></i>
-                                Logout
-                              </LogoutNavbarLink>
-                            </ul>
-                          </div>
                         </li>
-                      </li>
-                    </>
-                  )}
-                </>
+                        <li>
+                          <Link to={`/Profile/${auth?.user?.userId}`} onClick={() => { window.location.href = `/Profile/${auth?.user?.userId}`; }}>
+                            <i className="mdi mdi-account-key menu-icon me-2 text-success"></i> Account
+                          </Link>
+                        </li>
+                        <LogoutNavbarLink onClick={() => { window.location.href = "/Login"; }}>
+                          <i className="mdi mdi-logout me-2 text-success"></i>
+                          Logout
+                        </LogoutNavbarLink>
+                      </ul>
+                    </div>
+                  </li>
+                </li>
               )}
             </>
-            )}  
+          )}
+
         </ul>
-        
+
         <div className="cta-buttons">
           {!auth.user ? (
             <>
               <Link to="/Login" className="cta-btn hPostJob-btn">Post Job</Link>
               <Link to="/Login" className="cta-btn hLogin-btn">Login</Link>
             </>
-            ) : (
+          ) : (
             <>
-              {auth.user?.role === 1 ? (
+              {auth.user?.role === ROLE_ADMIN && (
                 <>
-                 <Link to="/Admin/Add-Job" className="cta-btn hPostJob-btn" onClick={() => {window.location.href = "/Admin/Add-Job";}}>Post Job</Link>
+                  <Link to="/Admin/Add-Job" className="cta-btn hPostJob-btn" onClick={() => { window.location.href = "/Admin/Add-Job"; }}>Post Job</Link>
                   <div className="cta-dropdown">
                     <li className={activeDropdown === 4 ? 'active' : ''}>
                       <Link to="#" className="dropdown-toggle" onClick={(e) => toggleDropdown(4, e)}>
-                        <i className='mdi mdi-account-check me-2 text-primary' style={{fontSize: "30px"}}></i> 
+                        <i className='mdi mdi-account-check me-2 text-primary' style={{ fontSize: "30px" }}></i>
                         {auth.user?.first_name} {" "} {auth.user?.last_name}
                       </Link>
                       <div className="mega-menu">
                         <h3>Admin Quick Access</h3>
                         <ul>
-                          <li>
-                            <Link to="/Admin/Dashboard" onClick={() => {window.location.href = "/Admin/Dashboard";}}>
-                              <i className="mdi mdi-home menu-icon me-2 text-success"></i> Dashboard
-                            </Link>
-                          </li>
-                          <li>
-                            <Link to="/Admin/Manage-Jobs" onClick={() => {window.location.href = "/Admin/Manage-Jobs";}}>
-                              <i className="mdi mdi-briefcase me-2 text-success menu-icon"></i>Manage Jobs
-                            </Link>
-                          </li>
-                          <li>
-                            <Link to="/Admin/Manage-Sectors" onClick={() => {window.location.href = "/Admin/Manage-Sectors";}}>
-                              <i className="mdi mdi-format-list-bulleted-type me-2 text-success menu-icon"></i>Job Sectors
-                            </Link>
-                          </li>
-                          <li>
-                            <Link to="/Admin/Manage-Qualifications" onClick={() => {window.location.href = "/Admin/Manage-Qualifications";}}>
-                              <i className="mdi mdi-school menu-icon me-2 text-success"></i> Job Qualifications
-                            </Link>
-                          </li>
-                          <li>
-                            <Link to="/Admin/Manage-Work-Experiences" onClick={() => {window.location.href = "/Admin/Manage-Work-Experiences";}}>
-                              <i className="mdi mdi-checkbox-multiple-marked menu-icon me-2 text-success"></i> Job Experieces
-                            </Link>
-                          </li>
-                          <li>
-                            <Link to="/Admin/Manage-Work-Modes" onClick={() => {window.location.href = "/Admin/Manage-Work-Modes";}}>
-                              <i className="mdi mdi-account-convert me-2 text-success"></i> Work Modes
-                            </Link>
-                          </li>
-                          <li>
-                            {/* <Link onClick={() => {window.location.href = "/Login";}}>Logout</Link> */}
-                            <LogoutNavbarLink onClick={() => {window.location.href = "/Login";}}>
-                              <i className="mdi mdi-logout me-2 text-success"></i>
-                              Logout
-                            </LogoutNavbarLink>
-                          </li>
+                          {renderAdminMenuItems()}
+                          {renderLogoutItem()}
                         </ul>
                       </div>
                     </li>
                   </div>
                 </>
-                ) : (
+              )}
+
+              {auth.user?.role === ROLE_SUPERADMIN && (
                 <>
-                 {auth.user?.role === 2 ? (
-                    <>
-                      <Link to="#" className="cta-btn hPostJob-btn">Post Job</Link>
-                        <div className="cta-dropdown">
-                          <li className={activeDropdown === 4 ? 'active' : ''}>
-                            <Link tp="#" className="dropdown-toggle" onClick={(e) => toggleDropdown(4, e)}>
-                              {/* <i className='mdi mdi-account-check me-2 text-primary' style={{fontSize: "30px"}}></i>  */}
-                              <img 
-                                className="profile-image me-2" 
-                                src={`${auth?.user?.photo?.startsWith('/uploads/userAvatars/') ? process.env.REACT_APP_API_URL + auth.user.photo : auth?.user?.photo || user?.photo}`}
-                                alt={`${auth?.user?.firstname} ${auth?.user?.lastname}`}
-                                aria-label="User profile photo"
-                                role="button"
-                                style={{borderRadius: "50%", height: "35px", width: "35px"}}
-                              />
-                              {auth.user?.firstname} {" "} {auth.user?.lastname}
-                            </Link>
-                            <div className="mega-menu">
-                              <h3>Employer Quick Access</h3>
-                              <ul>
-                                <li>
-                                <Link to="#" onClick={handleLinkClick}>
-                                  <i className="mdi mdi-home menu-icon me-2 text-success"></i> Dashboard
-                                </Link>
-                                </li>
-                                <li><Link to="#" onClick={handleLinkClick}>Account</Link></li>
-                                <LogoutNavbarLink onClick={() => {window.location.href = "/Login";}}>
-                                  <i className="mdi mdi-logout me-2 text-success"></i>
-                                  Logout
-                                </LogoutNavbarLink>
-                              </ul>
-                            </div>
-                          </li>
-                        </div>
-                    </>
-                    ) : (
-                    <>
-                    <Link to="/Search-Jobs" className="cta-btn hPostJob-btn">Find A Job</Link>
-                      <div className="cta-dropdown">
-                        <li className={activeDropdown === 4 ? 'active' : ''}>
-                          <Link to="#" className="dropdown-toggle" onClick={(e) => toggleDropdown(4, e)}>
-                            {/* <i className='mdi mdi-account-check me-2 text-primary' style={{fontSize: "30px"}}></i>  */}
-                            <img 
-                                className="profile-image me-2" 
-                                src={`${auth?.user?.photo?.startsWith('/uploads/userAvatars/') ? process.env.REACT_APP_API_URL + auth.user.photo : auth?.user?.photo || user?.photo}`}
-                                alt={`${auth.user.firstname} ${auth.user.lastname}`}
-                                aria-label="User profile photo"
-                                role="button"
-                                style={{borderRadius: "50%", height: "35px", width: "35px"}}
-                              />
-                            {auth.user?.firstname} {" "} {auth.user?.lastname}
-                          </Link>
-                          <div className="mega-menu">
-                            <h3>Job Seeker Quick Access</h3>
-                            <ul>
-                            <li>
-                                <Link to="/Applicant-Profile-Dashboard" onClick={() => {window.location.href = "/Applicant-Profile-Dashboard";}}>
-                                  <i className="mdi mdi-home menu-icon me-2 text-success"></i> Dashboard
-                                </Link>
-                              </li>
-                              <li>
-                                <Link to={`/Profile/${auth?.user?.userId}`} onClick={() => {window.location.href = `/Profile/${auth?.user?.userId}`;}}>
-                                  <i className="mdi mdi-account-key menu-icon me-2 text-success"></i> Account
-                                </Link>
-                              </li>
-                              <LogoutNavbarLink onClick={() => {window.location.href = "/Login";}}>
-                                <i className="mdi mdi-logout me-2 text-success"></i>
-                                Logout
-                              </LogoutNavbarLink>
-                            </ul>
-                          </div>
-                        </li>
+                  <Link to="/Super-Admin/Add-Job" className="cta-btn hPostJob-btn" onClick={() => { window.location.href = "/Super-Admin/Add-Job"; }}>Post Job</Link>
+                  <div className="cta-dropdown">
+                    <li className={activeDropdown === 4 ? 'active' : ''}>
+                      <Link to="#" className="dropdown-toggle" onClick={(e) => toggleDropdown(4, e)}>
+                        <i className='mdi mdi-account-check me-2 text-primary' style={{ fontSize: "30px" }}></i>
+                        {auth.user?.first_name} {" "} {auth.user?.last_name}
+                      </Link>
+                      <div className="mega-menu">
+                        <h3>Super Admin Quick Access</h3>
+                        <ul>
+                          {renderSuperAdminMenuItems()}
+                          {renderLogoutItem()}
+                        </ul>
                       </div>
-                    </>
-                  )}
+                    </li>
+                  </div>
+                </>
+              )}
+
+              {auth.user?.role === ROLE_EMPLOYER && (
+                <>
+                  <Link to="#" className="cta-btn hPostJob-btn">Post Job</Link>
+                  <div className="cta-dropdown">
+                    <li className={activeDropdown === 4 ? 'active' : ''}>
+                      <Link to="#" className="dropdown-toggle" onClick={(e) => toggleDropdown(4, e)}>
+                        <img
+                          className="profile-image me-2"
+                          src={`${auth?.user?.photo?.startsWith('/uploads/userAvatars/') ? process.env.REACT_APP_API_URL + auth.user.photo : auth?.user?.photo || user?.photo}`}
+                          alt={`${auth?.user?.firstname} ${auth?.user?.lastname}`}
+                          aria-label="User profile photo"
+                          role="button"
+                          style={{ borderRadius: "50%", height: "35px", width: "35px" }}
+                        />
+                        {auth.user?.firstname} {" "} {auth.user?.lastname}
+                      </Link>
+                      <div className="mega-menu">
+                        <h3>Employer Quick Access</h3>
+                        <ul>
+                          <li>
+                            <Link to="#" onClick={handleLinkClick}>
+                              <i className="mdi mdi-home menu-icon me-2 text-success"></i> Dashboard
+                            </Link>
+                          </li>
+                          <li><Link to="#" onClick={handleLinkClick}>Account</Link></li>
+                          <LogoutNavbarLink onClick={() => { window.location.href = "/Login"; }}>
+                            <i className="mdi mdi-logout me-2 text-success"></i>
+                            Logout
+                          </LogoutNavbarLink>
+                        </ul>
+                      </div>
+                    </li>
+                  </div>
+                </>
+              )}
+
+              {(auth.user?.role !== ROLE_ADMIN && auth.user?.role !== ROLE_SUPERADMIN && auth.user?.role !== ROLE_EMPLOYER) && (
+                <>
+                  <Link to="/Search-Jobs" className="cta-btn hPostJob-btn">Find A Job</Link>
+                  <div className="cta-dropdown">
+                    <li className={activeDropdown === 4 ? 'active' : ''}>
+                      <Link to="#" className="dropdown-toggle" onClick={(e) => toggleDropdown(4, e)}>
+                        <img
+                          className="profile-image me-2"
+                          src={`${auth?.user?.photo?.startsWith('/uploads/userAvatars/') ? process.env.REACT_APP_API_URL + auth.user.photo : auth?.user?.photo || user?.photo}`}
+                          alt={`${auth.user.firstname} ${auth.user.lastname}`}
+                          aria-label="User profile photo"
+                          role="button"
+                          style={{ borderRadius: "50%", height: "35px", width: "35px" }}
+                        />
+                        {auth.user?.firstname} {" "} {auth.user?.lastname}
+                      </Link>
+                      <div className="mega-menu">
+                        <h3>Job Seeker Quick Access</h3>
+                        <ul>
+                          <li>
+                            <Link to="/Applicant-Profile-Dashboard" onClick={() => { window.location.href = "/Applicant-Profile-Dashboard"; }}>
+                              <i className="mdi mdi-home menu-icon me-2 text-success"></i> Dashboard
+                            </Link>
+                          </li>
+                          <li>
+                            <Link to={`/Profile/${auth?.user?.userId}`} onClick={() => { window.location.href = `/Profile/${auth?.user?.userId}`; }}>
+                              <i className="mdi mdi-account-key menu-icon me-2 text-success"></i> Account
+                            </Link>
+                          </li>
+                          <LogoutNavbarLink onClick={() => { window.location.href = "/Login"; }}>
+                            <i className="mdi mdi-logout me-2 text-success"></i>
+                            Logout
+                          </LogoutNavbarLink>
+                        </ul>
+                      </div>
+                    </li>
+                  </div>
                 </>
               )}
             </>
-            )}          
+          )}
         </div>
       </nav>
     </header>

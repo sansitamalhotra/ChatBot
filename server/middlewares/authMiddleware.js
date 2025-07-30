@@ -54,8 +54,7 @@ const requireLogin = async (req, res, next) => {
     next();
     
   } catch (error) {
-    console.error('Auth Middleware Error:', error);
-    
+    console.error('Auth Middleware Error:', error);    
     // Handle specific JWT errors
     if (error.name === 'TokenExpiredError') {
       return res.status(401).json({ 
@@ -71,8 +70,7 @@ const requireLogin = async (req, res, next) => {
         message: 'Invalid token. Please login again.',
         requireLogin: true 
       });
-    }
-    
+    }    
     return res.status(401).json({ 
       success: false, 
       message: 'Invalid or expired token',
@@ -86,13 +84,13 @@ const isAdmin = async(req, res, next) => {
     try {
         const user = await User.findById(req.user._id);
         if (user.role !== 1) {
-            //  return res.status(401).json({ success: false, message: "ACCESS DENIED. You do not have the Authorization to View this Page!!!"});
-            console.log(res.status(401));
+          console.error(res.status(401));
+          return res.status(401).json({ success: false, message: "ADMIN ACCESS DENIED. You do not have the Authorization to View this Page!!!"});            
         } else {
             next();
         }
     } catch (error) {
-        console.log(error);
+        console.error(error);
         res.status(401).send({ success: false, error, message: "Something Went Wrong for from Admin Middleware" });
     }
 };
@@ -106,71 +104,39 @@ const isRecruiter = async(req, res, next) => {
             next();
         }
     } catch (error) {
-        console.log(error);
+        console.error(error);
         res.status(401).send({ success: false, error, message: "Something Went Wrong for from Recruiter Middleware" });
     }
 };
-
-
-const isApplicant = async (req, res, next) => {
-    try {
+// Fixed isSuperAdmin middleware
+const isSuperAdmin = async (req, res, next) => {
+   try {
         const user = await User.findById(req.user._id);
-        if (user.role !== 0) {
-            res.status(401).send({ success: false, message: "Job Seeker ACCESS DENIED. You do not have the Authorization to View this Page!!!" })
+        if (user.role !== 3) {
+          console.error(res.status(401));
+          return res.status(401).json({ success: false, message: "SUPER ADMIN ACCESS DENIED. You do not have the Authorization to View this Page!!!"});            
         } else {
             next();
         }
     } catch (error) {
-        console.log(error);
-        res.status(401).send({ success: false, error, message: "Something Went Wrong for from Applicant Middleware" });
-    };
+        console.error(error);
+        res.status(401).send({ success: false, error, message: "Something Went Wrong for from Super Admin Middleware" });
+    }
 };
 
-const isAuthorized = async (req, res, next) => {
-  await User.findById(req.user_id)
-    .then((userId) => {
-      if (!userId) {
-        const error = new Error("User not Found or does not Exist !!!");
-        error.statusCode = 404;
-        throw error;
-      }
-      req.role = userId.role;
-      next();
-    })
-    .catch((err) => {
-      if (!err.statusCode) {
-        err.statusCode = 500;
-      }
-      next(err);
-    });
+const isAdminOrSuperAdmin = async (req, res, next) => {
+  try {
+        const user = await User.findById(req.user._id);
+        if (user.role !== 3 || user.role == 1) {
+          console.error(res.status(401));
+          return res.status(401).json({ success: false, message: "ACCESS DENIED. You do not have the Authorization to View this Page!!!"});            
+        } else {
+            next();
+        }
+    } catch (error) {
+        console.error(error);
+        res.status(401).send({ success: false, error, message: "Something Went Wrong for from Super Admin Or Admin Middleware" });
+    }
 };
 
-const isUserAdmin = (req, res, next) => {
-  // console.log(req.role);
-  if (req.role !== 1) {
-    const err = new Error("Not Authorized, Only Admin is Allowed to View this Page!!!");
-    err.statusCode = 401;
-    next(err);
-  }
-  next();
-};
-
-const isUserRecruiter = (req, res, next) => {
-  if (req.role !== 2) {
-    const err = new Error("Not Authorized, Only Recruiters are Allowed to View this Page!!!");
-    err.statusCode = 401;
-    next(err);
-  }
-  next();
-};
-
-const isUser = (req, res, next) => {
-  if (req.role !== 0) {
-    const err = new Error("Not Authorized, Only Job Applicants are Allowed to View this Page!!!");
-    err.statusCode = 401;
-    next(err);
-  }
-  next();
-};
-
-module.exports = { requireLogin, isAdmin, isRecruiter, isApplicant, isAuthorized, isUserAdmin, isUserRecruiter, isUser }
+module.exports = { requireLogin, isAdmin, isSuperAdmin, isAdminOrSuperAdmin, isRecruiter }

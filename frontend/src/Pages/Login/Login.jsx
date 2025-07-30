@@ -83,6 +83,9 @@ const Login = () => {
       case 2:
         navigate("/Employer/Dashboard");
         return;
+      case 3:
+        navigate("/Super-Admin/Dashboard");
+        return;
       case 0:
         navigate(`/Applicant/Profile/${auth?.user?.userId}`);
         return;
@@ -129,6 +132,9 @@ const Login = () => {
         } else if (auth.user && userRole === 2) {
           navigate(location.state || "/Employer/Dashboard");
           window.location.reload();
+        }else if (auth.user && userRole === 3) {
+          navigate(location.state || "/Super-Admin/Dashboard");
+          window.location.reload();
         } else if (auth.user && userRole === 0) {
           navigate(location.state || `/Profile/${auth?.user?.userId}`);
           window.location.reload();
@@ -155,6 +161,9 @@ const Login = () => {
           window.location.reload();
         } else if (auth.user && userRole === 2) {
           navigate("/Employer/Dashboard");
+          window.location.reload();
+        } else if (auth.user && userRole === 3) {
+          navigate("/Super-Admin/Dashboard");
           window.location.reload();
         } else if (auth.user && userRole === 0) {
           navigate(`/Profile/${auth?.user?.userId}`);

@@ -2,7 +2,6 @@ import React, { useEffect, useState } from 'react';
 import { Link, useParams, useNavigate } from "react-router-dom";
 import { Helmet } from "react-helmet";
 import API from '../../helpers/API';
-import AdminUsersTable from './components/AdminUsersTable';
 import {
   EditOutlined,
   DeleteOutlined,
@@ -437,22 +436,7 @@ const TestDashboardHome = ({ userId }) => {
                     </div>
                   </div>
                 </div>
-              </div>
-
-              <div className="row mb-5">
-                <div className="col-12 grid-margin">
-                  <div className="page-header">
-                    <h3 className="page-title">
-                      <span className="page-title-icon bg-gradient-primary text-white me-2">
-                        <i className="mdi mdi-account-multiple-plus"></i>
-                       
-                      </span> Admin Users Status
-                    </h3>
-                    </div>
-                    <AdminUsersTable />
-                  </div>
-              </div>
-              
+              </div>              
               
               {/* Recent Tickets Table */}
               <div className="row">
