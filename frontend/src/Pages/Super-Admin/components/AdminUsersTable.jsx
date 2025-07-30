@@ -300,12 +300,12 @@ const AdminUsersTable = () => {
                     </td>
                     <td className="status-cell">
                       <span className={`badge status-badge ${
-                        status === 'active' ? 'bg-success' :
+                        status === 'active' ? 'bg-success me-1' :
                         status === 'idle' ? 'bg-warning text-dark' : 'bg-secondary'
                       }`}>
                         <i className={`status-icon ${
                           status === 'active' ? 'fas fa-circle' :
-                          status === 'idle' ? 'fas fa-clock' : 'fas fa-minus-circle'
+                          status === 'idle' ? 'fas fa-clock' : 'fas fa-minus-circle me-1'
                         }`}></i>
                         {status.charAt(0).toUpperCase() + status.slice(1)}
                       </span>
