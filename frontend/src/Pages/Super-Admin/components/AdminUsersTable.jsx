@@ -403,12 +403,24 @@ const AdminUsersTable = () => {
                       <span className="font-monospace">{formatDuration(durationMs)}</span>
                     </td>
                     <td className="status-cell">
+<<<<<<< HEAD
                       <span className={`badge status-badge ${statusDisplay.class}`}>
                         <i className={`fas me-1 ${statusDisplay.icon}`}></i>
                         {statusDisplay.label}
                         {admin.currentStatus === 'idle' && (
                           <i className="fas fa-hourglass-half ms-1"></i>
                         )}
+=======
+                      <span className={`badge status-badge ${
+                        status === 'active' ? 'bg-success me-1' :
+                        status === 'idle' ? 'bg-warning text-dark' : 'bg-secondary'
+                      }`}>
+                        <i className={`status-icon ${
+                          status === 'active' ? 'fas fa-circle' :
+                          status === 'idle' ? 'fas fa-clock' : 'fas fa-minus-circle me-1'
+                        }`}></i>
+                        {status.charAt(0).toUpperCase() + status.slice(1)}
+>>>>>>> 330991a38ca9bded927afffbf0bd2bbf49d4a7e9
                       </span>
                     </td>
                   </tr>
