@@ -1,17 +1,16 @@
+
 const mongoose = require("mongoose");
 
 const idleTrackingSchema = new mongoose.Schema({
   userId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "User",
-    required: true,
-    index: true
+    required: true
   },
   sessionId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "ActivitySession",
-    required: true,
-    index: true
+    required: true
   },
   idleStartTime: {
     type: Date,
@@ -37,14 +36,21 @@ const idleTrackingSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
+  metadata: { // ADDED: For storing instance IDs and other tracking data
+    instanceId: String,
+    endInstanceId: String,
+    logoutInstanceId: String,
+    additionalData: mongoose.Schema.Types.Mixed
+  },
   createdAt: {
     type: Date,
     default: Date.now
   }
 });
 
-// Index for efficient queries
+// Index for efficient queries - FIXED: Removed duplicate index definitions
 idleTrackingSchema.index({ userId: 1, idleStartTime: -1 });
 idleTrackingSchema.index({ sessionId: 1 });
+idleTrackingSchema.index({ idleEndTime: 1 }); // For finding open idle sessions
 
 module.exports = mongoose.model("IdleTracking", idleTrackingSchema);

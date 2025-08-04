@@ -9,7 +9,9 @@ const {
   fetchRegisteredUsers,
   fetchRegisteredUserById,
   fetchAllAppliedJobsByApplicants,
-  fetchAdminWithSession
+  fetchAdminWithSession,
+  getAdminStatusSummary,
+  logUserActivityFromBeacon
 } = require("../controllers/superAdminController.js");
 
   // Route to Fetch Registered Users
@@ -22,4 +24,6 @@ router.get("/fetchRegUsers", fetchRegisteredUsers);
 
 // Route to Fetch Admins For Live status & sessions Update
 router.get("/fetchAdminWithSession", requireLogin, isSuperAdmin, fetchAdminWithSession);
+router.get("/getAdminStatusSummary", requireLogin, isSuperAdmin, getAdminStatusSummary);
+router.post("/adminUser/activity", requireLogin, isSuperAdmin, logUserActivityFromBeacon);
 module.exports = router;

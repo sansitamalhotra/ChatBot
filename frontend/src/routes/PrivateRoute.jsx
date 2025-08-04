@@ -1,26 +1,41 @@
-import PropTypes from 'prop-types';
+import React, { useState, useEffect } from 'react';
 import { Navigate, Outlet } from "react-router-dom";
-import useAuth from "../hooks/useAuth";
-import React from "react";
-import LoadingSpinner from "../ui/LoadingSpinner/LoadingSpinner";
+import { useAuth } from "../Context/AuthContext";
+import API from "../helpers/API";
+import Spinner from "../ui/Spinner/Spinner";
 
-const ProtectRoute = ({ allowedRoles }) => {
+export const PrivateRoute = ({ requiredRole = 'admin' }) => {
+    const [ok, setOk] = useState(null);
+    const [auth, , authContext] = useAuth();
 
-    const { IsLoggedIn, user } = useAuth();
+    useEffect(() => {
+        const authCheck = async () => {
+            try {
+                if (!auth?.token) {
+                    setOk(false);
+                    return;
+                }
 
-    if (!IsLoggedIn) {
-        return <Navigate to="/Login" replace />
+                const endpoint = requiredRole === 'superadmin' 
+                    ? "/api/v1/auth/isSuperAdminRoute" 
+                    : "/api/v1/auth/adminRoute";
+                
+                const res = await API.get(endpoint);
+                setOk(res.data.ok || false);
+            } catch (error) {
+                console.error(`ProtectedRoute (${requiredRole}): Auth check failed:`, error);
+                setOk(false);
+            }
+        };
+
+        if (authContext?.isInitialized) {
+            authCheck();
+        }
+    }, [auth?.token, authContext?.isInitialized, requiredRole]);
+
+    if (!authContext?.isInitialized || ok === null) {
+        return <Spinner />;
     }
-    if (!allowedRoles.includes(user.role)) {
-        return <Navigate to="/PSPL-Access-Denied" replace />
-    }
-    return (
-        <React.Suspense fallback={<LoadingSpinner />}>
-            <Outlet />
-        </React.Suspense>
-    );
+
+    return ok ? <Outlet /> : <Navigate to="/Login" replace />;
 };
-
-ProtectRoute.propTypes = { allowedRoles: PropTypes.arrayOf(PropTypes.string).isRequired }
-
-export default ProtectRoute;

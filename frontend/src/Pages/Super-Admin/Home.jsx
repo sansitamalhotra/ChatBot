@@ -15,7 +15,6 @@ import {
 import { LogoutLink } from '../Logout/Logout';
 import { LogoutNavbarLink } from '../Logout/LogoutNavbar';
 
-
 import $ from 'jquery';
 import 'bootstrap/dist/js/bootstrap.bundle.min';
 import './assets/vendors/mdi/css/materialdesignicons.min.css';

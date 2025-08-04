@@ -1,142 +1,276 @@
-const JWT = require('jsonwebtoken')
+// ============================================================================
+// 1. FIXED JWT Helper (helpers/generateToken.js)
+// ============================================================================
+const jwt = require("jsonwebtoken");
+
+// Generate Access Token - FIXED: Ensure all required fields are present
+exports.GenerateAccessToken = (user) => {
+    console.log("Generating token for user:", {
+        id: user._id,
+        email: user.email,
+        role: user.role
+    });
+
+    if (!user._id) {
+        throw new Error("User ID is required for token generation");
+    }
+
+    const tokenPayload = {
+        userId: user._id.toString(), // Ensure it's a string
+        firstname: user.firstname,
+        lastname: user.lastname,
+        email: user.email,
+        phone: user.phone,
+        role: user.role,
+        photo: user.photo,
+        country: user.country,
+        appliedJobs: user.appliedJobs,
+        jobsPostedBy: user.jobsPostedBy,
+        status: user.status,
+        registeredDate: user.registeredDate,
+        isVerified: user.isVerified,
+        isBlocked: user.isBlocked,
+        workAuthorization: user.workAuthorization
+    };
+    
+    console.log("Token payload being signed:", { userId: tokenPayload.userId, role: tokenPayload.role });
+    
+    const token = jwt.sign(tokenPayload, process.env.JWT_SECRET_KEY, { expiresIn: "8h" });
+    
+    // Verify the token immediately after creation (for debugging)
+    try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET_KEY);
+        console.log("Token verification successful:", { userId: decoded.userId, role: decoded.role });
+    } catch (error) {
+        console.error("Token verification failed immediately after creation:", error);
+    }
+    
+    return token;
+};
+
+// Generate Refresh Token
+exports.GenerateRefreshToken = (userId) => {
+    const token = jwt.sign({ userId: userId.toString() }, process.env.REFRESH_TOKEN_SECRET_KEY, {
+        expiresIn: "7d",
+    });
+    return token;
+};
+
+// ============================================================================
+// 2. ENHANCED Auth Middleware (middlewares/authMiddleware.js)
+// ============================================================================
+const JWT = require('jsonwebtoken');
 const User = require('../models/userModel');
 
-
-// Protected Route Token Base
 const requireLogin = async (req, res, next) => {
   try {
-    let token = req.headers.authorization;
+    // Extract token from Authorization header
+    const authHeader = req.headers.authorization;
+    console.log("Auth header received:", authHeader ? "Present" : "Missing");
     
-    if (!token) {
-      return res.status(401).json({ success: false, message: 'Authorization token missing' });
-    }
-    
-    if (token.startsWith('Bearer ')) {
-      token = token.slice(7);
-    }
-    
-    const decoded = JWT.verify(token, process.env.JWT_SECRET_KEY);
-    
-    // Query User full document here
-    const user = await User.findById(decoded._id);
-    
-    if (!user) {
-      return res.status(401).json({ success: false, message: 'User not found' });
-    }
-
-    // Check if user is blocked
-    if (user.isBlocked) {
-      return res.status(401).json({ success: false, message: 'User account is blocked' });
-    }
-
-    // Check if user is verified
-    if (!user.isVerified) {
-      return res.status(401).json({ success: false, message: 'User account is not verified' });
-    }
-
-    // Additional validation: Check if user status is logout
-    // This prevents using old tokens after logout
-    if (user.status === 'logout' || user.currentStatus === 'offline') {
+    if (!authHeader) {
       return res.status(401).json({ 
         success: false, 
-        message: 'Session expired. Please login again.',
-        requireLogin: true 
+        message: "No authorization header provided" 
       });
     }
 
-    // Update last activity timestamp for active users
-    if (user.currentStatus === 'active') {
-      user.lastActivity = new Date();
-      await user.save();
+    const token = authHeader.startsWith('Bearer ') 
+      ? authHeader.slice(7) 
+      : authHeader.split(" ")[1];
+    
+    if (!token) {
+      return res.status(401).json({ 
+        success: false, 
+        message: "No token provided" 
+      });
+    }
+
+    console.log("Verifying token...");
+    console.log("JWT_SECRET_KEY exists:", !!process.env.JWT_SECRET_KEY);
+    
+    const decode = JWT.verify(token, process.env.JWT_SECRET_KEY);
+    console.log("Token decoded successfully:", { 
+      userId: decode.userId, 
+      role: decode.role,
+      email: decode.email 
+    });
+    
+    // Additional validation
+    if (!decode.userId) {
+      console.error("Token is valid but userId is missing from payload");
+      return res.status(401).json({ 
+        success: false, 
+        message: "Invalid token payload - missing user ID" 
+      });
     }
     
-    req.user = user; // attach full mongoose doc for later use
+    req.user = decode;
     next();
-    
   } catch (error) {
-    console.error('Auth Middleware Error:', error);    
-    // Handle specific JWT errors
+    console.error("Authentication error:", error.message);
+    
     if (error.name === 'TokenExpiredError') {
       return res.status(401).json({ 
         success: false, 
-        message: 'Token expired. Please login again.',
-        requireLogin: true 
+        message: "Token expired" 
       });
     }
     
     if (error.name === 'JsonWebTokenError') {
       return res.status(401).json({ 
         success: false, 
-        message: 'Invalid token. Please login again.',
-        requireLogin: true 
+        message: "Invalid token" 
       });
-    }    
-    return res.status(401).json({ 
+    }
+    
+    res.status(401).json({ 
       success: false, 
-      message: 'Invalid or expired token',
-      requireLogin: true 
+      message: "Authentication failed" 
     });
   }
 };
 
-// for Admin Routes and Access
-const isAdmin = async(req, res, next) => {
-    try {
-        const user = await User.findById(req.user._id);
-        if (user.role !== 1) {
-          console.error(res.status(401));
-          return res.status(401).json({ success: false, message: "ADMIN ACCESS DENIED. You do not have the Authorization to View this Page!!!"});            
-        } else {
-            next();
-        }
-    } catch (error) {
-        console.error(error);
-        res.status(401).send({ success: false, error, message: "Something Went Wrong for from Admin Middleware" });
+const isAdmin = async (req, res, next) => {
+  try {
+    const userId = req.user.userId;
+    console.log("isAdmin: Checking user ID:", userId);
+    
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: "User ID not found in token"
+      });
     }
+    
+    const user = await User.findById(userId);
+    console.log("isAdmin: User found:", user ? { id: user._id, role: user.role, email: user.email } : "No user found");
+    
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        message: "User not found in database"
+      });
+    }
+
+    if (user.role === 1) {
+      console.log("isAdmin: Access granted for admin user");
+      next();
+    } else {
+      console.log("isAdmin: Access denied - user role is", user.role, "but admin requires role 1");
+      return res.status(403).json({
+        success: false,
+        message: "ACCESS DENIED. You do not have the Authorization to View this Page!!!"
+      });
+    }
+  } catch (error) {
+    console.error("isAdmin middleware error:", error);
+    return res.status(500).json({
+      success: false,
+      error: error.message,
+      message: "Something Went Wrong from Admin Middleware"
+    });
+  }
+};
+
+const isSuperAdmin = async (req, res, next) => {
+  try {
+    const userId = req.user.userId;
+    console.log("isSuperAdmin: Checking user ID:", userId);
+    
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: "User ID not found in token"
+      });
+    }
+    
+    const user = await User.findById(userId);
+    console.log("isSuperAdmin: User found:", user ? { id: user._id, role: user.role, email: user.email } : "No user found");
+    
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        message: "User not found in database"
+      });
+    }
+
+    if (user.role === 3) {
+      console.log("isSuperAdmin: Access granted for super admin user");
+      next();
+    } else {
+      console.log("isSuperAdmin: Access denied - user role is", user.role, "but super admin requires role 3");
+      return res.status(403).json({
+        success: false,
+        message: "ACCESS DENIED. You do not have the Authorization to View this Page!!!"
+      });
+    }
+  } catch (error) {
+    console.error("isSuperAdmin middleware error:", error);
+    return res.status(500).json({
+      success: false,
+      error: error.message,
+      message: "Something Went Wrong from Super Admin Middleware"
+    });
+  }
 };
 
 const isRecruiter = async(req, res, next) => {
-    try {
-        const user = await User.findById(req.user._id);
-        if (user.role !== 2) {
-            res.status(401).send({ success: false, message: "Recruiter ACCESS DENIED. You do not have the Authorization to View this Page!!!" })
-        } else {
-            next();
-        }
-    } catch (error) {
-        console.error(error);
-        res.status(401).send({ success: false, error, message: "Something Went Wrong for from Recruiter Middleware" });
+  try {
+    const userId = req.user.userId;
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: "User ID not found in token"
+      });
     }
-};
-// Fixed isSuperAdmin middleware
-const isSuperAdmin = async (req, res, next) => {
-   try {
-        const user = await User.findById(req.user._id);
-        if (user.role !== 3) {
-          console.error(res.status(401));
-          return res.status(401).json({ success: false, message: "SUPER ADMIN ACCESS DENIED. You do not have the Authorization to View this Page!!!"});            
-        } else {
-            next();
-        }
-    } catch (error) {
-        console.error(error);
-        res.status(401).send({ success: false, error, message: "Something Went Wrong for from Super Admin Middleware" });
+    
+    const user = await User.findById(userId);
+    if (user?.role === 2) {
+      next();
+    } else {
+      res.status(403).send({
+        success: false,
+        message: "Recruiter ACCESS DENIED. You do not have the Authorization to View this Page!!!"
+      });
     }
+  } catch (error) {
+    console.error(error);
+    res.status(500).send({
+      success: false,
+      error: error.message,
+      message: "Something Went Wrong for from Recruiter Middleware"
+    });
+  }
 };
 
 const isAdminOrSuperAdmin = async (req, res, next) => {
   try {
-        const user = await User.findById(req.user._id);
-        if (user.role !== 3 || user.role == 1) {
-          console.error(res.status(401));
-          return res.status(401).json({ success: false, message: "ACCESS DENIED. You do not have the Authorization to View this Page!!!"});            
-        } else {
-            next();
-        }
-    } catch (error) {
-        console.error(error);
-        res.status(401).send({ success: false, error, message: "Something Went Wrong for from Super Admin Or Admin Middleware" });
+    const userId = req.user.userId;
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: "User ID not found in token"
+      });
     }
+    
+    const user = await User.findById(userId);
+    if (user && (user.role === 1 || user.role === 3)) {
+      next();
+    } else {
+      return res.status(403).json({ 
+        success: false, 
+        message: "ACCESS DENIED. You do not have the Authorization to View this Page!!!" 
+      });
+    }
+  } catch (error) {
+    console.error(error);
+    res.status(500).send({ 
+      success: false, 
+      error: error.message, 
+      message: "Something Went Wrong for from Super Admin Or Admin Middleware" 
+    });
+  }
 };
 
-module.exports = { requireLogin, isAdmin, isSuperAdmin, isAdminOrSuperAdmin, isRecruiter }
+module.exports = { requireLogin, isAdmin, isSuperAdmin, isAdminOrSuperAdmin, isRecruiter };

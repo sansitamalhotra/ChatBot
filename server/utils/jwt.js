@@ -3,7 +3,7 @@ const jwt = require("jsonwebtoken");
 // Generate Access Token
 exports.GenerateAccessToken = (user) => {
     const tokenPayload = {
-        userId: user._id,
+        userId: user._id.toString(),
         firstname: user.firstname,
         lastname: user.lastname,
         email: user.email,
@@ -19,7 +19,7 @@ exports.GenerateAccessToken = (user) => {
         isBlocked: user.isBlocked,
         workAuthorization: user.workAuthorization
     };
-    const token = jwt.sign(tokenPayload, process.env.ACCESS_TOKEN_SECRET_KEY, { expiresIn: "30m" });
+    const token = jwt.sign(tokenPayload, process.env.ACCESS_TOKEN_SECRET_KEY, { expiresIn: "8h" });
 
     return token;
 };

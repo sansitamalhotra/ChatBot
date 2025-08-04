@@ -1,5 +1,5 @@
 const Chat = require('../models/chatModel');
-const ChatSession = require('../models/ChatSession');
+const ChatSession = require('../models/chatSession');
 const nodemailer = require('nodemailer');
 
 module.exports = {

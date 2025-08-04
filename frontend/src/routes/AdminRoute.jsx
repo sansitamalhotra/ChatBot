@@ -6,25 +6,43 @@ import Spinner from "../ui/Spinner/Spinner";
 
 export const AdminRoute = () => {
     const [ok, setOk] = useState(null);
-    const [auth, setAuth] = useAuth();
+    const [auth, , isInitialized] = useAuth();
 
     useEffect(() => {
         const authCheck = async () => {
-            const res = await API.get("/api/v1/auth/adminRoute");
-            if (res.data.ok) {
-                setOk(true);
-            } else {
+            try {
+                console.log("AdminRoute: Checking authorization...");
+                
+                if (!auth?.token) {
+                    console.log("AdminRoute: No token found");
+                    setOk(false);
+                    return;
+                }
+
+                const res = await API.get("/api/v1/auth/adminRoute");
+                console.log("AdminRoute API response:", res.data);
+                
+                if (res.data.ok) {
+                    setOk(true);
+                } else {
+                    setOk(false);
+                }
+            } catch (error) {
+                console.error("AdminRoute auth check failed:", error.response?.data || error.message);
                 setOk(false);
             }
         };
-        if (auth?.token) {
+
+        // Only run auth check after auth context is initialized
+        if (isInitialized) {
             authCheck();
         }
-    }, [auth?.token]);
+    }, [auth?.token, isInitialized]);
 
-    if (ok === null) {
+    // Show spinner while auth is initializing or checking
+    if (!isInitialized || ok === null) {
         return <Spinner />;
     }
 
-    return ok ? <Outlet /> : <Navigate to="/Login" />;
+    return ok ? <Outlet /> : <Navigate to="/Login" replace />;
 };

@@ -9,14 +9,27 @@ const activityLogSchema = new mongoose.Schema({
   },
   sessionId: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: "ActivitySession",
-    required: true,
-    index: true
+    ref: 'ActivitySession',
+    required: false
   },
   activityType: {
     type: String,
-    enum: ['login', 'logout', 'heartbeat', 'idle_start', 'idle_end', 'session_end'],
-    required: true
+    required: true,
+    enum: [
+      'login',
+      'logout',
+      'idle_start',
+      'idle_end',
+      'auto_logout',
+      'session_start',
+      'session_end',
+      'session_resume',
+      'tab_hidden',
+      'tab_visible',
+      'connection_lost',
+      'reconnected'
+    ],
+    default: 'login'
   },
   timestamp: {
     type: Date,
@@ -29,7 +42,13 @@ const activityLogSchema = new mongoose.Schema({
   },
   ipAddress: {
     type: String,
-    required: true
+    required: true,
+    default: 'unknown'
+  },
+  email: { // Add email field for direct tracking
+    type: String,
+    required: true,
+    index: true
   },
   createdAt: {
     type: Date,
@@ -41,5 +60,5 @@ const activityLogSchema = new mongoose.Schema({
 activityLogSchema.index({ userId: 1, timestamp: -1 });
 activityLogSchema.index({ sessionId: 1, timestamp: -1 });
 activityLogSchema.index({ activityType: 1, timestamp: -1 });
-
+activityLogSchema.index({ email: 1 });  // NEW: Index for email
 module.exports = mongoose.model("ActivityLog", activityLogSchema);

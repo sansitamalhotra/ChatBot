@@ -162,7 +162,7 @@ const AddTestProvince = () => {
   }, [])
 
   const handleCancel = () => {
-    navigate('/Admin/Test-Manage-Qualifications'); // Replace '/desired-path' with the actual path you want to navigate to
+    navigate('/Super-Admin/Test-Manage-Qualifications'); // Replace '/desired-path' with the actual path you want to navigate to
 };
 
 const notifyErr = (msg) =>

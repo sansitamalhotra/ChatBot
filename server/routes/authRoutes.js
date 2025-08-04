@@ -91,17 +91,23 @@ router.put("/Account/Change-Password", requireLogin, changePasswordController);
 
 router.put('/upload-user-photo', requireLogin, upload.single('photo'), uploadUserPhoto);
 router.get('/user-photo/:userId', requireLogin, fetchUserPhoto);
-
-// Admin Route
-router.get("/adminRoute", requireLogin, isAdmin, (req, res) => { res.status(200).send({ ok: true }); });
 router.get("/fetchRegUsers", fetchRegUsers);
 
+
+// Admin Route
+router.get("/adminRoute", requireLogin, isAdmin, (req, res) => {
+  res.status(200).send({ ok: true });
+});
+
 // Super Admin Route
-router.get("/isSuperAdminRoute", requireLogin, isSuperAdmin, (req, res) => { res.status(200).send({ ok: true }); });
+router.get("/isSuperAdminRoute", requireLogin, isSuperAdmin, (req, res) => {
+  res.status(200).send({ ok: true });
+});
 
 // Super Admin Or Admin Route
-router.get("/isAdminOrSuperAdminRoute", requireLogin, isAdminOrSuperAdmin, (req, res) => { res.status(200).send({ ok: true }); });
-
+router.get("/isAdminOrSuperAdminRoute", requireLogin, isAdminOrSuperAdmin, (req, res) => { 
+  res.status(200).send({ ok: true }); 
+});
 // Protected Employer route Auth
 router.get("/employerRoute", requireLogin, isRecruiter, (req, res) => {
     res.status(200).send({ ok: true });

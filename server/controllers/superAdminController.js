@@ -5,7 +5,9 @@ const User = require("../models/userModel");
 const ApplicantJobApplication = require("../models/applicantJobApplicationModel");
 const ActivitySession = require('../models/activitySessionModel');
 const mongoose = require('mongoose');
+const { getClientIP } = require('../services/socketService');
 
+const VALID_USER_STATUSES = ['offline', 'online', 'active', 'idle', 'away'];
 module.exports = 
 {
     fetchRegisteredUsers: async(req, res) => {
@@ -179,33 +181,49 @@ module.exports =
         error: error.message
       });
     }
-  },
-  
+  },  
   fetchAdminWithSession: async (req, res) => {
     try {
-      // Find all Admins with Role: 1 (get ALL admins, not just those with active sessions)
-      const admins = await User.find({ role: 1 }).select('-password').lean();
+      // Fetch ALL admin users (role 1), not just online ones
+      const admins = await User.find({ 
+        role: 1
+      })
+      .select('-password -resetPasswordToken -resetPasswordExpire')
+      .lean();
       
-      // For each Admin, find their latest session (active or ended)
       const adminsWithSession = await Promise.all(admins.map(async (admin) => {
-        // Find Latest Session for Admin User (both active and ended), sorted by LoginTime in Descending Order
-        const loginLatestSession = await ActivitySession.findOne({
-          userId: new mongoose.Types.ObjectId(admin._id),
+        // Find latest session (active or ended)
+        const session = await ActivitySession.findOne({ 
+          userId: new mongoose.Types.ObjectId(admin._id)
         }).sort({ loginTime: -1 }).lean();
         
-        // Return admin with session info and current status
-        return { 
-          ...admin, 
-          loginLatestSession,
-          // Ensure currentStatus is included (fallback to 'offline' if not set)
-          currentStatus: admin.currentStatus || 'offline'
+        // FIXED: Validate currentStatus against correct enum values
+        let validatedStatus = admin.currentStatus;
+        if (!validatedStatus || !VALID_USER_STATUSES.includes(validatedStatus)) {
+          // Check if user has an active session to determine if they should be online
+          if (session && session.sessionStatus === 'active') {
+            validatedStatus = 'active';
+          } else {
+            validatedStatus = 'offline';
+          }
+        }
+        
+        return {
+          ...admin,
+          loginLatestSession: session,
+          currentStatus: validatedStatus,
+          sessionId: session?._id // Add session ID for tracking
         };
       }));
       
-      console.log(`Fetched ${adminsWithSession.length} admin users with session info`);
-      res.status(200).json({ success: true, admins: adminsWithSession });
-    }
-    catch (error) {
+      console.log(`📊 Fetched ${adminsWithSession.length} admins with sessions`);
+      
+      res.status(200).json({ 
+        success: true, 
+        admins: adminsWithSession,
+        timestamp: new Date().toISOString()
+      });
+    } catch (error) {
       console.error("Error fetching admins with session info:", error);
       res.status(500).json({
         success: false,
@@ -214,4 +232,100 @@ module.exports =
       });
     }
   },
+  getAdminStatusSummary: async (req, res) => {
+    try {
+      const statusCounts = await User.aggregate([
+        { $match: { role: 1 } },
+        { 
+          $group: {
+            _id: "$currentStatus",
+            count: { $sum: 1 }
+          }
+        }
+      ]);
+      const summary = {
+        total: 0,
+        active: 0,
+        idle: 0,
+        away: 0,
+        offline: 0
+      };
+      statusCounts.forEach(status => {
+        const statusKey = VALID_USER_STATUSES.includes(status._id) ? status._id : 'offline';
+        summary[statusKey] = status.count;
+        summary.total += status.count;
+      });
+      res.status(200).json({
+        success: true,
+        summary,
+        timestamp: new Date().toISOString()
+      });
+    } catch (error) {
+      console.error("Error fetching admin status summary:", error);
+      res.status(500).json({
+        success: false,
+        message: "Error fetching admin status summary",
+        error: error.message,
+      });
+    }
+  },
+  logUserActivityFromBeacon: async (req, res) => {
+    try {
+
+      const ipAddress = getClientIP({
+        handshake: {
+          headers: req.headers,
+          address: req.ip || req.connection.remoteAddress
+        }
+      });
+
+      if (!req.body || typeof req.body !== 'object') {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid beacon data format"
+        });
+      }
+
+      const { type, data } = req.body;
+      
+      if (type !== 'user_logout') {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid beacon type"
+        });
+      }
+
+      const activityData = data;
+      console.log('📬 Received beacon activity:', activityData);
+
+      const newLog = new ActivityLog({
+        userId: activityData.userId,
+        email: activityData.userInfo?.email || 'unknown@email.com',
+        sessionId: activityData.sessionId || null,
+        activityType: 'page_unload',
+        timestamp: new Date(activityData.timestamp),
+        ipAddress, // Use detected IP
+        metadata: {
+          ...activityData.metadata,
+          beacon: true,
+          userAgent: req.headers['user-agent'] || 'unknown'
+        }
+      });
+
+      await newLog.save();
+      
+      res.status(200).json({
+        success: true,
+        message: "Beacon activity logged"
+      });
+      
+    } catch (error) {
+      console.error("Error logging beacon activity:", error);
+      res.status(500).json({
+        success: false,
+        message: "Error logging beacon activity",
+        error: error.message
+      });
+    }
+  }
 }

@@ -16,6 +16,7 @@ const sharp = require('sharp');
 const { logActivity } = require('../utils/logActivity');
 const uploadPhoto = multer({ dest: './uploads/UserProfilePhotos' });
 
+const { io } = require('../server');
 
 module.exports = {
     // ================= Register New User Method Starts Here ======================== //
@@ -158,31 +159,32 @@ module.exports = {
         return res.status(400).send({ success: false, message: "Incorrect Email or Password!!" });
       }
 
-      // Generate Token for Login/Authentication
+      // FIXED: Generate Token with consistent payload structure
       const token = jwt.sign(
-        {
-          _id: user._id,
-          email: user.email,
-          firstname: user.firstname,
-          lastname: user.lastname,
-          role: user.role,
-          photo: user.photo,
-          phone: user.phone,
-          isVerified: user.isVerified,
-          isBlocked: user.isBlocked,
-          country: user.country,
-          workAuthorization: user.workAuthorization,
-          appliedJobs: user.appliedJobs,
-          jobsPostedBy: user.jobsPostedBy,
-          registeredDate: user.registeredDate,
-          status: user.status
-        },
-        `${process.env.JWT_SECRET_KEY}`,
-        { expiresIn: "7d" }
-      );
+      {
+        id: user._id,  // Keep 'id' as primary identifier
+        userId: user._id,  // Add userId for compatibility
+        email: user.email,
+        firstname: user.firstname,
+        lastname: user.lastname,
+        role: user.role,
+        photo: user.photo,
+        phone: user.phone,
+        isVerified: user.isVerified,
+        isBlocked: user.isBlocked,
+        country: user.country,
+        workAuthorization: user.workAuthorization,
+        appliedJobs: user.appliedJobs,
+        jobsPostedBy: user.jobsPostedBy,
+        registeredDate: user.registeredDate,
+        status: user.status
+      },
+      `${process.env.JWT_SECRET_KEY}`,
+      { expiresIn: "7d" }
+    );
 
       console.log("userId: ", user._id.toString());
-      console.log("token:", token);
+      console.log("Generated token payload contains id:", !!jwt.decode(token).id);
 
       // Create activity session - userAgent only for Admin users (role === 1)
       const ipAddress = req.ip || req.headers['x-forwarded-for'] || '';
@@ -193,7 +195,7 @@ module.exports = {
         userId: user._id,
         loginTime: new Date(),
         ipAddress,
-        userAgent: isAdmin ? (req.get('User-Agent') || 'unknown') : 'not-tracked', // Provide default for non-admin
+        userAgent: isAdmin ? (req.get('User-Agent') || 'unknown') : 'not-tracked',
         deviceInfo: {}
       };
 
@@ -205,8 +207,8 @@ module.exports = {
         user._id,
         { 
           status: 'login', 
-          currentStatus: 'active',  // Set to active when user logs in
-          currentSessionId: savedSession._id,  // Link to the current session
+          currentStatus: 'online', // Start with 'online', socket will update to 'active'
+          currentSessionId: savedSession._id,
           lastActivity: new Date(),
           updatedAt: Date.now() 
         },
@@ -232,7 +234,7 @@ module.exports = {
           jobsPostedBy: user.jobsPostedBy,
           registeredDate: user.registeredDate,
           status: logUser.status,
-          currentStatus: logUser.currentStatus,  // Include currentStatus in response
+          currentStatus: logUser.currentStatus
         },
         token,
         logUser
@@ -293,65 +295,65 @@ module.exports = {
 // ------------------- Verify Your Email Account Method Ends Here --------------------------- //
 
 // ================= Logout User Method Starts Here ======================== //
-  logoutController: async (req, res) => {
+logoutController: async (req, res) => {
   try {
-    const { user } = req; // extracted user from decoded token or requireLogin middleware
-    if (!user) {
-      return res.status(404).json({ success: false, message: 'ACCESS DENIED. Kindly Login to Continue' });
-    }
+    const { user } = req;
+    if (!user) return res.status(404).json({ success: false, message: 'ACCESS DENIED' });
 
-    // End user's current activity session if exists
+    // Get io instance from request
+    const io = req.app.get('socketio');
+
+    // End current session
     if (user.currentSessionId) {
       const session = await ActivitySession.findById(user.currentSessionId);
       if (session && session.sessionStatus !== 'ended') {
         session.logoutTime = new Date();
         session.sessionStatus = 'ended';
-        
-        // Optional: update userAgent for admin only
-        const isAdmin = (user.role === 1);
-        if (isAdmin) {
-          const userAgent = req.get('User-Agent') || 'unknown';
-          session.userAgent = userAgent;
-        }
         await session.save();
-
-        // Log logout activity (async)
-        logActivity(user._id, session._id, 'logout', req, user.role).catch(console.error);
       }
     }
 
-    // Update user status fields explicitly to 'logout'/'offline' - FIXED HERE
+    // Update user status
     const updatedUser = await User.findByIdAndUpdate(
       user._id,
       {
-        status: 'logout',           // update to logged out status
-        currentStatus: 'offline',   // set to offline when logged out
-        currentSessionId: null,     // clear current session association
+        status: 'logout',
+        currentStatus: 'offline',
+        currentSessionId: null,
         lastActivity: new Date(),
-        updatedAt: Date.now()
       },
       { new: true }
     );
 
-    // Clear any auth cookies/local storage on response side if applicable
+    // Emit logout event to all status monitors
+    if (io && (user.role === 1 || user.role === 2)) {
+      io.to('admins').to('status-monitors').emit('user:statusChanged', {
+        userId: user._id.toString(),
+        status: 'offline',
+        userInfo: {
+          _id: user._id,
+          firstname: user.firstname,
+          lastname: user.lastname,
+          email: user.email,
+          role: user.role,
+          photo: user.photo
+        },
+        timestamp: Date.now()
+      });
+    }
+
     res.clearCookie('userAuthDetails');
-    
     res.status(200).json({ 
       success: true, 
-      message: 'You Have Logged Out Successfully.', 
-      user: {
-        userId: updatedUser._id.toString(),
-        status: updatedUser.status,
-        currentStatus: updatedUser.currentStatus,
-        lastActivity: updatedUser.lastActivity
-      }
+      message: 'Logged Out Successfully',
+      user: updatedUser 
     });
 
   } catch (error) {
-    console.error('Logout controller error:', error);
+    console.error('Logout error:', error);
     res.status(500).json({ 
       success: false, 
-      message: 'Logout Failed, Server Side Error', 
+      message: 'Logout Failed', 
       error: error.message 
     });
   }

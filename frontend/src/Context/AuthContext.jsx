@@ -5,27 +5,61 @@ const AuthContext = createContext();
 
 const AuthProvider = ({ children }) => {
     const [auth, setAuth] = useState({ user: null, token: "" });
-
-    // Set the default API Authorization header
-    API.defaults.headers.common["Authorization"] = auth?.token;
+    const [isInitialized, setIsInitialized] = useState(false);
 
     useEffect(() => {
-
-        const data = localStorage.getItem("userAuthDetails");
-        
-        if (data) {
-            const parseData = JSON.parse(data);
-            setAuth({ ...auth, user: parseData.user, token: parseData.token });
+        if (auth?.token) {
+            API.defaults.headers.common["Authorization"] = `Bearer ${auth.token}`;
+        } else {
+            delete API.defaults.headers.common["Authorization"];
         }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [auth?.token]);
+
+    useEffect(() => {
+        const initializeAuth = () => {
+            try {
+                const data = localStorage.getItem("userAuthDetails");
+                if (data) {
+                    const parseData = JSON.parse(data);
+                    if (parseData.user && parseData.token) {
+                        setAuth({ 
+                            user: parseData.user, 
+                            token: parseData.token 
+                        });
+                    }
+                }
+            } catch (error) {
+                localStorage.removeItem("userAuthDetails");
+            } finally {
+                setIsInitialized(true);
+            }
+        };
+
+        initializeAuth();
     }, []);
 
+    const updateAuth = (authData) => {
+        setAuth(authData);
+        if (authData?.user && authData?.token) {
+            localStorage.setItem("userAuthDetails", JSON.stringify(authData));
+        } else {
+            localStorage.removeItem("userAuthDetails");
+        }
+    };
+
+    const logout = () => {
+        setAuth({ user: null, token: "" });
+        localStorage.removeItem("userAuthDetails");
+        delete API.defaults.headers.common["Authorization"];
+    };
+
     return (
-        <AuthContext.Provider value={[auth, setAuth]}>
+        <AuthContext.Provider value={[auth, updateAuth, isInitialized, logout]}>
             {children}
         </AuthContext.Provider>
     );
 };
 
 const useAuth = () => useContext(AuthContext);
+
 export { useAuth, AuthProvider };

@@ -1,3 +1,4 @@
+import { useUserIdleTracker } from "./hooks/useUserIdleTracker"; 
 import React, { Suspense, lazy, useState, useEffect } from "react";
 import {
   // eslint-disable-next-line
@@ -8,8 +9,8 @@ import {
   useLocation
 } from "react-router-dom";
 import API from './helpers/API';
-
 import { useAuth } from "./Context/AuthContext";
+import { useLogout } from "./Pages/Logout/LogoutNavbar";
 
 import FavIconLogo from "./assets/img/FaviIcon-Logo.png";
 
@@ -67,6 +68,7 @@ const AddTestWorkMode = lazy(() => import('./Pages/Admin/WorkModes/AddTestWorkMo
 const AddTestCountry = lazy(() => import('./Pages/Admin/Countries/AddTestCountry'));
 const ManageAdminJobTestCountries = lazy(() => import('./Pages/Admin/Countries/ManageAdminTestCountries'));
 const AddTestProvince = lazy(() => import('./Pages/Admin/Provinces/AddTestProvince'));
+
 const ManageAdminTestProvinces = lazy(() => import('./Pages/Admin/Provinces/ManageAdminTestProvinces'));
 const AddTestSector = lazy(() => import('./Pages/Admin/Sectors/AddTestSector'));
 const ManageAdminTestSectors = lazy(() => import('./Pages/Admin/Sectors/ManageAdminTestSectors'));
@@ -161,6 +163,9 @@ function App() {
   // eslint-disable-next-line
   const [user, setUser] = useState({});
   const params = useParams();
+  const { handleLogout } = useLogout();
+
+  
 
 
 const fetchRegUserById = async () => {
@@ -172,9 +177,6 @@ const fetchRegUserById = async () => {
     console.log(error);
   }
 };
-
-  // initial Registered User Details
-  // Fetch Registered User Details
   // eslint-disable-next-line
 useEffect(() => {
   if (params?._id) fetchRegUserById();
@@ -188,6 +190,12 @@ useEffect(() => {
   }
   // eslint-disable-next-line
 }, []);
+  
+const isAdmin = auth?.user?.role === 1;
+
+  useUserIdleTracker({
+    onAutoLogout: isAdmin ? handleLogout : undefined
+  });
 
   return (
     <div className="container-fluid bg-white p-0 App">           
@@ -280,9 +288,7 @@ useEffect(() => {
             <Route path="/Super-Admin/Manage-Work-Authorizations" element={<ManageAdminTestWorkAuthorizations />} />
             <Route path="/Super-Admin/Change-Password" element={<AdminTestChangePassword />} />
             {/* ##################################################################### */}
-          </Route>
-          
-
+          </Route>          
           {/* Applicant Routes */}
           <Route path="/" element={<ApplicantRoute />}>
             {/* @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ */}
@@ -292,10 +298,7 @@ useEffect(() => {
             <Route path={`/Applicant-Resume-Upload/${auth?.user?.userId}`} element={<ApplicantResumeUpload />}  />
             <Route path="/User-Change-Password" element={<PageChangePassword />} />
             {/* @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ */}
-
-          </Route>
-          
-
+          </Route>         
           {/* Employer Routes */}
           <Route path="/" element={<EmployerRoute />}>
             <Route path="/Employer/Dashboard" element={<EmployerDashboardHome />} />

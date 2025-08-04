@@ -1,11 +1,11 @@
-const mongoose = require("mongoose");
+// server/models/activitySessionModel.js
+const mongoose = require('mongoose');
 
 const activitySessionSchema = new mongoose.Schema({
   userId: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: "User", //ref User Model
-    required: true,
-    index: true
+    ref: "User",
+    required: true
   },
   loginTime: {
     type: Date,
@@ -16,13 +16,17 @@ const activitySessionSchema = new mongoose.Schema({
     type: Date,
     default: null
   },
-  totalActiveTime: {
-    type: Number, // in milliseconds
+  totalWorkTime: {
+    type: Number,
     default: 0
   },
   totalIdleTime: {
-    type: Number, // in milliseconds
+    type: Number,
     default: 0
+  },
+  idleStartTime: {
+    type: Date,
+    default: null
   },
   sessionStatus: {
     type: String,
@@ -47,6 +51,10 @@ const activitySessionSchema = new mongoose.Schema({
       height: Number
     }
   },
+  metadata: {
+    type: mongoose.Schema.Types.Mixed,
+    default: {}
+  },
   createdAt: {
     type: Date,
     default: Date.now
@@ -57,15 +65,13 @@ const activitySessionSchema = new mongoose.Schema({
   }
 });
 
-// Index for efficient queries
 activitySessionSchema.index({ userId: 1, loginTime: -1 });
 activitySessionSchema.index({ sessionStatus: 1 });
 activitySessionSchema.index({ createdAt: -1 });
 
-// Update updatedAt on save
 activitySessionSchema.pre('save', function(next) {
   this.updatedAt = Date.now();
   next();
 });
 
-module.exports = mongoose.model("ActivitySession", activitySessionSchema)
+module.exports = mongoose.model("ActivitySession", activitySessionSchema);

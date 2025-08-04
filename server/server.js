@@ -7,17 +7,18 @@ const dotenv = require("dotenv");
 const cors = require("cors");
 const cookieParser = require("cookie-parser");
 const jwt = require('jsonwebtoken');
+
 const User = require('./models/userModel');
-const ActivitySession = require('./models/activitySessionModel');
+const { setupSocketHandlers } = require('./services/socketService')
 
 dotenv.config();
 const dbConnect = require("./configs/dbConnect");
 const app = express();
 
-// Create an HTTP server for socket integration
+// Create an HTTP Server For Socket Integration
 const server = http.createServer(app);
 
-// Parse application/json
+// Parse application/json and urlencoded
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
@@ -38,34 +39,34 @@ if (process.env.ALLOW_ORIGINS) {
     }
   } catch (err) {
     console.error('Error parsing ALLOW_ORIGINS from .env:', err);
-    allowedOrigins = allowedOrigins;
+    allowedOrigins = [];
   }
 } else {
-  console.warn('ALLOW_ORIGINS environment variable is not set. Using default origins.');
-  allowedOrigins = allowedOrigins;
+  console.warn('ALLOW_ORIGINS env not set. Defaulting to *');
+  allowedOrigins = ['*'];
 }
 
+// CORS Configuration
 app.use(cors({
   credentials: true,
   origin: allowedOrigins,
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
 }));
 
-// Additional CORS headers - consider merging with the above CORS config
-app.use(function(req, res, next) {
-  res.header("Access-Control-Allow-Origin", "*");
-  res.header("Access-Control-Allow-Methods", "GET, PUT, POST");
-  res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept");
-  next();
-});
-
-// Socket.IO Configuration for Employee Utility Time Optimization Phase 2
+// --- SOCKET.IO SETUP ---
 const io = new Server(server, {
   cors: {
     origin: allowedOrigins,
     methods: ['GET', 'POST', 'PUT'],
     credentials: true,
-  }
+  },
+  pingTimeout: 60000, // 60 seconds
+  pingInterval: 25000  // 25 seconds
+});
+
+app.use((req, res, next) => {
+  req.app.set('socketio', io);
+  next();
 });
 
 
@@ -73,289 +74,52 @@ const io = new Server(server, {
 io.use(async (socket, next) => {
   try {
     const token = socket.handshake.auth.token;
-
     if (!token) {
+      console.error('Socket auth failed: Missing token');
       return next(new Error('Authentication Failed: Missing Token!'));
     }
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET_KEY);
-    if (!decoded?._id) {
+    if (!decoded?.id && !decoded?.userId) {
+      console.error('Socket auth failed: Invalid token payload', decoded);
       return next(new Error('Authentication Failed: Invalid Token!'));
     }
 
-    const user = await User.findById(decoded._id).select('-password').lean();
+    // Handle both token formats
+    const userId = decoded.id || decoded.userId;
+    const user = await User.findById(userId).select('-password').lean();
     if (!user) {
+      console.error(`Socket auth failed: User not found (ID: ${userId})`);
       return next(new Error('Authentication Failed: User Not Found!'));
     }
 
-    // Attach user object to socket
-    socket.user = user;
-    next();
-
-  } catch (err) {
-    console.error('Socket Authentication Error:', err.message);
-    return next(new Error('Authentication Failed!'));
-  }
-});
-
-// Helper Functions for Socket Operations
-const createUserInfo = (user) => ({
-  _id: user._id,
-  firstname: user.firstname,
-  lastname: user.lastname,
-  email: user.email,
-  role: user.role,
-  photo: user.photo,
-});
-
-const findOrCreateActiveSession = async (userId) => {
-  try {
-    let session = await ActivitySession.findOne({
-      userId: new mongoose.Types.ObjectId(userId),
-      sessionStatus: 'active'
-    });
-
-    if (!session) {
-      session = new ActivitySession({
-        userId: new mongoose.Types.ObjectId(userId),
-        loginTime: new Date(),
-        sessionStatus: 'active',
-        totalIdleTime: 0,
-        totalWorkTime: 0,
-      });
-      await session.save();
-      console.log(`Created new active session for user: ${userId}`);
-    }
-
-    return session;
-  } catch (error) {
-    console.error(`Error finding/creating session for user ${userId}:`, error);
-    throw error;
-  }
-};
-
-const getAllAdminsWithSessions = async () => {
-  try {
-    const admins = await User.find({ role: 1 }).select('-password').lean();
-    
-    const adminsWithSession = await Promise.all(admins.map(async (admin) => {
-      const loginLatestSession = await ActivitySession.findOne({
-        userId: new mongoose.Types.ObjectId(admin._id),
-      }).sort({ loginTime: -1 }).lean();
-      
-      return {
-        ...admin,
-        loginLatestSession,
-        currentStatus: admin.currentStatus || 'offline'
-      };
-    }));
-
-    return adminsWithSession;
-  } catch (error) {
-    console.error('Error fetching admins with sessions:', error);
-    throw error;
-  }
-};
-
-const updateUserStatus = async (userId, status, additionalFields = {}) => {
-  try {
-    const updateData = {
-      currentStatus: status,
-      lastActivity: new Date(),
-      ...additionalFields
+    // FIXED: Set correct user properties for socket
+    socket.user = {
+      _id: user._id,
+      userId: user._id, // Add both for compatibility
+      role: user.role,
+      firstname: user.firstname,
+      lastname: user.lastname,
+      email: user.email,
+      photo: user.photo
     };
-
-    await User.findByIdAndUpdate(userId, updateData, { new: true });
-    console.log(`Updated user ${userId} status to: ${status}`);
-  } catch (error) {
-    console.error(`Error updating user ${userId} status:`, error);
-    throw error;
+    
+    console.log(`✅ Socket authenticated for user: ${user.email} (Role: ${user.role})`);
+    next();
+  } catch (err) {
+    console.error('Socket Auth Error:', err.message);
+    next(new Error('Authentication Failed: Invalid Token!'));
   }
-};
+});
 
-// Socket.IO connection handler
-io.on('connection', async (socket) => {
-  const userId = socket.user._id.toString();
-  const isAdmin = socket.user.role === 1;
-
-  console.log(`User Connected Via Socket.IO: ${userId}, Admin: ${isAdmin}`);
-
-  // Join personal room for targeted emits
-  socket.join(userId);
-
-  try {
-    // Handle admin connections
-    if (isAdmin) {
-      socket.join('admins');
-      console.log(`Admin ${userId} joined 'admins' room`);
-
-      // Update user status to 'active' when they connect
-      await updateUserStatus(userId, 'active');
-
-      // Find or create an active session for this admin
-      const session = await findOrCreateActiveSession(userId);
-      
-      // Get the updated session as lean object
-      const loginLatestSession = await ActivitySession.findById(session._id).lean();
-
-      // Prepare user info for broadcast
-      const userInfo = createUserInfo(socket.user);
-
-      // Emit to all admins that this admin is now active
-     io.to('admins').emit('user:statusChanged', {
-        userId,
-        status,
-        loginLatestSession: updatedSession,   // session object
-        userInfo: {
-          _id: user._id,
-          firstname: user.firstname,
-          lastname: user.lastname,
-          email: user.email,
-          role: user.role,
-          photo: user.photo,
-        }
-      });
-
-      console.log(`Emitted user:statusChanged for admin login: ${userId}`);
-
-      // Send initial admin status snapshot to the newly connected admin
-      try {
-        const adminsWithSession = await getAllAdminsWithSessions();
-        socket.emit('admin:initialStatusList', adminsWithSession);
-      } catch (err) {
-        console.error('Error sending initial admin status list:', err);
-      }
-    }
-  } catch (error) {
-    console.error(`Error handling admin connection for user ${userId}:`, error);
-  }
-
-  // Handle user activity events
-  socket.on('user:activity', async (data) => {
-    try {
-      const { status } = data;
-      const now = new Date();
-
-      if (!status) {
-        console.warn(`Invalid status received from user ${userId}`);
-        return;
-      }
-
-      // Update user's current status and last activity time
-      await updateUserStatus(userId, status);
-
-      // Find the current active activity session for this user
-      const session = await ActivitySession.findOne({ 
-        userId: new mongoose.Types.ObjectId(userId), 
-        sessionStatus: 'active' 
-      });
-
-      if (!session) {
-        console.warn(`No active session found for user ${userId} on activity update`);
-        return;
-      }
-
-      // Handle idle start/end times and update session totals
-      if (status === 'idle') {
-        if (!session.idleStart) {
-          session.idleStart = now;
-          await session.save();
-        }
-      } else if (status === 'active') {
-        if (session.idleStart) {
-          const idleDurationMs = now - session.idleStart;
-          session.totalIdleTime = (session.totalIdleTime || 0) + idleDurationMs;
-          session.idleStart = null;
-
-          // Update total work time = total session time - idle time
-          const totalSessionDuration = now - session.loginTime;
-          session.totalWorkTime = totalSessionDuration - session.totalIdleTime;
-
-          await session.save();
-        }
-      }
-
-      // Reload updated session as plain object
-      const loginLatestSession = await ActivitySession.findById(session._id).lean();
-
-      // Prepare user info for frontend update
-      const userInfo = createUserInfo(socket.user);
-
-      // Emit user status update with session and user info to all admins
-      io.to('admins').emit('user:statusChanged', {
-        userId,
-        status,
-        loginLatestSession,
-        userInfo,
-      });
-
-      console.log(`Emitted user:statusChanged for user ${userId} with status: ${status}`);
-
-    } catch (err) {
-      console.error('Error in user:activity handler:', err);
-    }
-  });
-
-  // Handle socket disconnect
-  socket.on('disconnect', async (reason) => {
-    try {
-      const userId = socket.user._id.toString();
-      const now = new Date();
-
-      // Update the user status to offline and other fields as needed
-      await User.findByIdAndUpdate(userId, {
-        currentStatus: 'offline',
-        status: 'logout',
-        currentSessionId: null,
-        lastActivity: now,
-        updatedAt: now,
-      });
-
-      // Find the active session and mark it ended
-      const session = await ActivitySession.findOne({
-        userId,
-        sessionStatus: 'active',
-      }).sort({ loginTime: -1 });
-
-      if (session) {
-        session.logoutTime = now;
-        session.sessionStatus = 'ended';
-        await session.save();
-      }
-
-      // Reload updated session as plain object if exists
-      const loginLatestSession = session ? await ActivitySession.findById(session._id).lean() : null;
-
-      // Prepare minimal user info
-      const userInfo = {
-        _id: socket.user._id,
-        firstname: socket.user.firstname,
-        lastname: socket.user.lastname,
-        email: socket.user.email,
-        role: socket.user.role,
-        photo: socket.user.photo,
-      };
-
-      // Emit to 'admins' room the status change event
-      io.to('admins').emit('user:statusChanged', {
-        userId,
-        status: 'offline',
-        loginLatestSession,
-        userInfo,
-      });
-
-      console.log(`User ${userId} disconnected (${reason}). Emitted offline status to admins.`);
-
-    } catch (err) {
-      console.error('Error handling socket disconnect:', err);
-    }
-  });
-
-  // Handle connection errors
-  socket.on('error', (error) => {
-    console.error(`Socket error for user ${userId}:`, error);
+// Ping-pong handler
+io.on('connection', (socket) => {
+  socket.on('ping', (timestamp) => {
+    socket.emit('pong', timestamp);
   });
 });
+
+setupSocketHandlers(io);
 
 // Environment configuration
 const environment = process.env.NODE_ENV;
@@ -404,8 +168,6 @@ Object.entries(staticPaths).forEach(([key, dirPath]) => {
     console.log(`Serving ${key} at ${urlPath} from ${dirPath}`);
   }
 });
-
-
 // Health check endpoint
 app.get("/health", (req, res) => {
   res.status(200).json({
@@ -422,7 +184,6 @@ app.get("/", (req, res) => {
     `<h2 style="color: darkBlue;">ProsoftSynergies Database is Now Connected Successfully on Port ${PORT} ${environment} Mode </h2>`
   );
 });
-
 // IMPORTANT: API routes must be defined BEFORE serving static files and catch-all route
 // Auth Routes
 app.use("/api/v1/admin", require("./routes/adminRoutes"));
@@ -514,3 +275,4 @@ server.listen(PORT, function () {
 
   console.log(`Health check available at: http://localhost:${PORT}/health`);
 });
+module.exports = { app, server, io };

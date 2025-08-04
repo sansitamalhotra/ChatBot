@@ -1,25 +1,31 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
+import moment from 'moment';
 import API from '../../../helpers/API';
 import { useSocket } from '../../../Context/SocketContext';
-import moment from 'moment';
 import './AdminUsersTable.css';
+
+const VALID_USER_STATUSES = ['offline', 'online', 'active', 'idle', 'away'];
 
 const AdminUsersTable = () => {
   const [admins, setAdmins] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [currentTime, setCurrentTime] = useState(Date.now()); // Added missing state
+  const [currentTime, setCurrentTime] = useState(Date.now());
   const [newAdminIds, setNewAdminIds] = useState([]);
   const [updatedAdminIds, setUpdatedAdminIds] = useState([]);
+  const [showIp, setShowIp] = useState(false);
   
-  const socket = useSocket();
+  const { socket, isConnected, connectionStatus, error: socketError, reconnect } = useSocket();
   const intervalRef = useRef(null);
-  const updateIntervalRef = useRef(null); // Added missing ref
-  const lastFetchTime = useRef(Date.now());
+  const updateIntervalRef = useRef(null);
   const isInitialLoad = useRef(true);
+  const statusUpdateRef = useRef({});
 
-  // Memoized function to clear animation states
+  const validateStatus = useCallback((status) => {
+    return VALID_USER_STATUSES.includes(status) ? status : 'offline';
+  }, []);
+
   const clearAnimationState = useCallback((userId, type) => {
     setTimeout(() => {
       if (type === 'new') {
@@ -27,34 +33,32 @@ const AdminUsersTable = () => {
       } else if (type === 'updated') {
         setUpdatedAdminIds(prevIds => prevIds.filter(id => id !== userId));
       }
-    }, 1500);
+    }, 2000);
   }, []);
 
-  // Enhanced fetch function with better error handling and loading states
   const fetchAdmins = useCallback(async (isBackground = false) => {
     try {
-      if (!isBackground) {
-        setLoading(true);
-      } else {
-        setIsRefreshing(true);
-      }
-      setError(null);
+      if (!isBackground) setLoading(true);
+      else setIsRefreshing(true);
       
+      setError(null);
       const { data } = await API.get('api/v1/superAdmin/fetchAdminWithSession');
       
       if (data.success && data.admins) {
         setAdmins(prevAdmins => {
-          // Only update if data has actually changed
-          const prevAdminsString = JSON.stringify(prevAdmins);
-          const newAdminsString = JSON.stringify(data.admins);
-          
-          if (prevAdminsString !== newAdminsString && !isInitialLoad.current) {
-            // Mark existing admins as updated if their data changed
-            data.admins.forEach(newAdmin => {
+          const newAdmins = data.admins.map(admin => ({
+            ...admin,
+            currentStatus: validateStatus(admin.currentStatus)
+          }));
+
+          if (!isInitialLoad.current) {
+            newAdmins.forEach(newAdmin => {
               const existingAdmin = prevAdmins.find(admin => admin._id === newAdmin._id);
               if (existingAdmin) {
-                const adminChanged = JSON.stringify(existingAdmin) !== JSON.stringify(newAdmin);
-                if (adminChanged) {
+                const statusChanged = existingAdmin.currentStatus !== newAdmin.currentStatus;
+                const sessionChanged = existingAdmin.loginLatestSession?.loginTime !== newAdmin.loginLatestSession?.loginTime;
+                
+                if (statusChanged || sessionChanged) {
                   setUpdatedAdminIds(prev => {
                     if (!prev.includes(newAdmin._id)) {
                       clearAnimationState(newAdmin._id, 'updated');
@@ -63,33 +67,53 @@ const AdminUsersTable = () => {
                     return prev;
                   });
                 }
+              } else {
+                setNewAdminIds(prev => {
+                  if (!prev.includes(newAdmin._id)) {
+                    clearAnimationState(newAdmin._id, 'new');
+                    return [...prev, newAdmin._id];
+                  }
+                  return prev;
+                });
               }
             });
           }
           
           isInitialLoad.current = false;
-          return data.admins;
+          return newAdmins;
         });
-        lastFetchTime.current = Date.now();
       } else {
-        setError('Invalid response from server');
+        throw new Error(data.message || 'Invalid response from server');
       }
     } catch (error) {
-      console.error('Fetch error:', error);
-      setError('Failed to fetch admin data');
+      setError(`Failed to fetch admin data: ${error.message}`);
     } finally {
       setLoading(false);
       setIsRefreshing(false);
     }
-  }, [clearAnimationState]);
+  }, [clearAnimationState, validateStatus]);
 
-  // Optimized socket handler with debouncing
-  const handleStatusChanged = useCallback(({ userId, status, loginLatestSession, userInfo }) => {
+  const handleStatusChanged = useCallback((data) => {
+    const { userId, status, loginLatestSession, userInfo, timestamp, ipAddress } = data;
+
+    if (!userId) return;
+
+    const validatedStatus = validateStatus(status);
+    const now = Date.now();
+    const lastUpdate = statusUpdateRef.current[userId] || 0;
+    
+    // Allow immediate updates for all status changes
+    const shouldBypassDebounce = true;
+    
+    if (!shouldBypassDebounce && now - lastUpdate < 500) return;
+
+    statusUpdateRef.current[userId] = now;
+
     setAdmins(prev => {
       const existingIndex = prev.findIndex(a => a._id === userId);
       const isNew = existingIndex === -1;
 
-      if (isNew) {
+      if (isNew && userInfo) {
         setNewAdminIds(prevIds => {
           if (!prevIds.includes(userId)) {
             clearAnimationState(userId, 'new');
@@ -97,140 +121,222 @@ const AdminUsersTable = () => {
           }
           return prevIds;
         });
-      } else {
-        setUpdatedAdminIds(prevIds => {
-          if (!prevIds.includes(userId)) {
-            clearAnimationState(userId, 'updated');
-            return [...prevIds, userId];
-          }
-          return prevIds;
-        });
+      } else if (!isNew) {
+        const existingAdmin = prev[existingIndex];
+        if (existingAdmin.currentStatus !== validatedStatus) {
+          setUpdatedAdminIds(prevIds => {
+            if (!prevIds.includes(userId)) {
+              clearAnimationState(userId, 'updated');
+              return [...prevIds, userId];
+            }
+            return prevIds;
+          });
+        }
       }
 
       if (existingIndex !== -1) {
-        return prev.map(admin => 
-          admin._id === userId
-            ? { 
-                ...admin, 
-                currentStatus: status,
-                loginLatestSession: loginLatestSession || admin.loginLatestSession
-              }
-            : admin
-        );
+        return prev.map(admin => {
+          if (admin._id === userId) {
+            return {
+              ...admin, 
+              currentStatus: validatedStatus,
+              loginLatestSession: {
+                ...(loginLatestSession || admin.loginLatestSession),
+                ipAddress: ipAddress || (loginLatestSession?.ipAddress) 
+                          || admin.loginLatestSession?.ipAddress
+              },
+              lastActivity: timestamp ? new Date(timestamp) : new Date(),
+              ...(userInfo && {
+                firstname: userInfo.firstname || admin.firstname,
+                lastname: userInfo.lastname || admin.lastname,
+                email: userInfo.email || admin.email,
+                photo: userInfo.photo || admin.photo,
+                role: userInfo.role || admin.role
+              })
+            };
+          }
+          return admin;
+        });
       }
       
-      return [
-        ...prev,
-        {
-          _id: userId,
-          firstname: userInfo?.firstname || '',
-          lastname: userInfo?.lastname || '',
-          email: userInfo?.email || '',
-          role: userInfo?.role || 1,
-          photo: userInfo?.photo || '',
-          currentStatus: status,
-          loginLatestSession
-        }
-      ];
-    });
-  }, [clearAnimationState]);
+      if (userInfo) {
+        return [
+          ...prev,
+          {
+            _id: userId,
+            firstname: userInfo.firstname || 'Unknown',
+            lastname: userInfo.lastname || 'User',
+            email: userInfo.email || '',
+            role: userInfo.role || 1,
+            photo: userInfo.photo || '',
+            currentStatus: validatedStatus,
+            loginLatestSession: {
+              ...loginLatestSession,
+              ipAddress: ipAddress || loginLatestSession?.ipAddress
+            },
+            lastActivity: timestamp ? new Date(timestamp) : new Date()
+          }
+        ];
+      }
 
-  // Calculate session duration with proper currentTime dependency
-  const calculateSessionDuration = useCallback((session) => {
+      return prev;
+    });
+  }, [clearAnimationState, validateStatus]);
+
+  const handleUserActivity = useCallback((data) => {
+    handleStatusChanged({
+      ...data,
+      status: data.status || 'active'
+    });
+  }, [handleStatusChanged]);
+
+  useEffect(() => {
+    fetchAdmins();
+    
+    intervalRef.current = setInterval(() => {
+      fetchAdmins(true);
+    }, 30000);
+
+    updateIntervalRef.current = setInterval(() => {
+      setCurrentTime(Date.now());
+    }, 1000);
+
+    return () => {
+      clearInterval(intervalRef.current);
+      clearInterval(updateIntervalRef.current);
+    };
+  }, [fetchAdmins]);
+
+  useEffect(() => {
+    if (!socket || !isConnected) return;
+    
+    const statusHandler = (data) => handleStatusChanged(data);
+    const activityHandler = (data) => handleUserActivity(data);
+    const initialStatusHandler = (adminsData) => {
+      if (adminsData && Array.isArray(adminsData)) {
+        setAdmins(adminsData.map(admin => ({
+          ...admin,
+          currentStatus: validateStatus(admin.currentStatus)
+        })));
+      }
+    };
+    
+    socket.on('statusChanged', statusHandler);
+    socket.on('activityLogged', activityHandler);
+    socket.on('admin:initialStatusList', initialStatusHandler);
+    
+    socket.emit('admin:requestStatusList');
+    
+    return () => {
+      if (socket) {
+        socket.off('statusChanged', statusHandler);
+        socket.off('activityLogged', activityHandler);
+        socket.off('admin:initialStatusList', initialStatusHandler);
+      }
+    };
+  }, [socket, isConnected, handleStatusChanged, handleUserActivity, validateStatus]);
+
+  const calculateSessionDuration = useCallback((session, currentStatus) => {
     if (!session || !session.loginTime) return 0;
     
-    if (session.sessionStatus === 'active') {
-      return currentTime - new Date(session.loginTime).getTime();
+    const loginTime = new Date(session.loginTime).getTime();
+    const now = currentTime;
+
+    if (session.sessionStatus === 'active' || currentStatus !== 'offline') {
+      const baseDuration = now - loginTime;
+      const idleTime = session.totalIdleTime || 0;      
+      return Math.max(0, baseDuration - idleTime);
     }
     
-    if (session.sessionStatus === 'ended' && session.logoutTime) {
-      return new Date(session.logoutTime).getTime() - new Date(session.loginTime).getTime();
-    }
-    
-    return 0;
+    return session.totalWorkTime || 0;
   }, [currentTime]);
 
-  // Format duration helper
   const formatDuration = useCallback((ms) => {
     if (!ms || ms < 0) return '00:00:00';
     return moment.utc(ms).format('HH:mm:ss');
   }, []);
 
-  // Retry handler
-  const handleRetry = useCallback(() => {
-    fetchAdmins();
-  }, [fetchAdmins]);
-
-  // Main effect for initialization
-  useEffect(() => {
-    // Initial fetch
-    fetchAdmins();
+  const getStatusDisplay = useCallback((status) => {
+    const validatedStatus = validateStatus(status);
     
-    // Set up background refresh interval
-    intervalRef.current = setInterval(() => {
-      fetchAdmins(true); // Background fetch
-    }, 10000); // 10 seconds interval
-
-    // Set up real-time duration update interval
-    updateIntervalRef.current = setInterval(() => {
-      setCurrentTime(Date.now());
-    }, 1000); // Update every second for real-time duration
-
-    return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-      }
-      if (updateIntervalRef.current) {
-        clearInterval(updateIntervalRef.current);
-      }
+    const statusConfig = {
+      online: { label: 'Online', class: 'bg-primary', icon: 'fa-circle' },
+      active: { label: 'Active', class: 'bg-success', icon: 'fa-circle' },
+      idle: { label: 'Idle', class: 'bg-warning text-dark', icon: 'fa-clock' },
+      away: { label: 'Away', class: 'bg-info', icon: 'fa-user-clock' },
+      offline: { label: 'Offline', class: 'bg-secondary', icon: 'fa-minus-circle' }
     };
-  }, [fetchAdmins]);
 
-  // Socket effect
-  useEffect(() => {
-    if (!socket) return;
+    return statusConfig[validatedStatus] || statusConfig.offline;
+  }, [validateStatus]);
 
-    socket.on('user:statusChanged', handleStatusChanged);
-    
-    return () => {
-      socket.off('user:statusChanged', handleStatusChanged);
-    };
-  }, [socket, handleStatusChanged]);
+  const renderConnectionStatus = () => {
+    if (connectionStatus === 'connected') {
+      return <span className="text-success"><i className="fas fa-wifi"></i> Connected</span>;
+    } else if (connectionStatus.startsWith('connecting') || connectionStatus.startsWith('reconnecting')) {
+      return (
+        <span className="text-warning">
+          <div className="spinner-border spinner-border-sm me-1" role="status"></div>
+          {connectionStatus}
+        </span>
+      );
+    } else {
+      return (
+        <div>
+          <span className="text-danger"><i className="fas fa-wifi"></i> Disconnected</span>
+          <button className="btn btn-sm btn-outline-danger ms-2" onClick={reconnect}>
+            Reconnect
+          </button>
+        </div>
+      );
+    }
+  };
 
-  // Loading state
   if (loading && isInitialLoad.current) {
     return (
       <div className="text-center py-4">
-        <div className="spinner-border text-primary" role="status">
-          <span className="visually-hidden">Loading admin status...</span>
+        <div className="spinner-border text-primary" role="status"></div>
+        <p className="mt-2 text-muted">Loading admin users...</p>
+      </div>
+    );
+  }
+
+  if (error && admins.length === 0) {
+    return (
+      <div className="alert alert-danger">
+        <i className="fas fa-exclamation-triangle me-2"></i>
+        {error}
+        <div className="mt-2">
+          <button className="btn btn-sm btn-primary me-2" onClick={() => fetchAdmins()}>
+            Retry
+          </button>
+          <button className="btn btn-sm btn-outline-primary" onClick={reconnect}>
+            Reconnect Socket
+          </button>
         </div>
       </div>
     );
   }
-
-  // Error state
-  if (error) {
-    return (
-      <div className="alert alert-danger">
-        {error} 
-        <button 
-          className="btn btn-sm btn-primary ms-2" 
-          onClick={handleRetry}
-          disabled={loading}
-        >
-          {loading ? 'Retrying...' : 'Retry'}
-        </button>
-      </div>
-    );
-  }
-
+  
   return (
     <div className="admin-users-table-container">
+      <div className="d-flex justify-content-between align-items-center mb-3">
+        <h5 className="mb-0">Admin Users Status</h5>
+        <div>
+          <button 
+            className={`btn btn-sm me-2 ${showIp ? 'btn-info' : 'btn-outline-secondary'}`}
+            onClick={() => setShowIp(!showIp)}
+          >
+            <i className={`fas fa-${showIp ? 'eye-slash' : 'eye'} me-1`}></i>
+            {showIp ? 'Hide IPs' : 'Show IPs'}
+          </button>
+          {renderConnectionStatus()}
+        </div>
+      </div>
+
       {isRefreshing && (
         <div className="refresh-indicator">
-          <div className="spinner-border spinner-border-sm text-primary" role="status">
-            <span className="visually-hidden">Refreshing...</span>
-          </div>
+          <div className="spinner-border spinner-border-sm text-primary" role="status"></div>
           <span className="ms-2 text-muted small">Updating...</span>
         </div>
       )}
@@ -241,6 +347,7 @@ const AdminUsersTable = () => {
             <tr>
               <th>Name</th>
               <th>Email</th>
+              {showIp && <th>IP Address</th>}
               <th>Logged In Since</th>
               <th>Session Duration</th>
               <th>Status</th>
@@ -249,7 +356,7 @@ const AdminUsersTable = () => {
           <tbody>
             {admins.length === 0 ? (
               <tr>
-                <td colSpan="5" className="text-center py-4 text-muted">
+                <td colSpan={showIp ? "6" : "5"} className="text-center py-4 text-muted">
                   No admin users found
                 </td>
               </tr>
@@ -259,19 +366,16 @@ const AdminUsersTable = () => {
                   ? new Date(admin.loginLatestSession.loginTime) 
                   : null;
                 
-                const durationMs = calculateSessionDuration(admin.loginLatestSession);
-                const status = admin.currentStatus || 'offline';
+                const durationMs = calculateSessionDuration(admin.loginLatestSession, admin.currentStatus);
+                const statusDisplay = getStatusDisplay(admin.currentStatus);
                 const isNew = newAdminIds.includes(admin._id);
                 const isUpdated = updatedAdminIds.includes(admin._id);
+                const ipAddress = admin.loginLatestSession?.ipAddress || 'N/A';
 
                 return (
                   <tr 
                     key={admin._id} 
-                    className={`
-                      admin-row
-                      ${isNew ? 'fade-in' : ''} 
-                      ${isUpdated ? 'updating-row' : ''}
-                    `.trim()}
+                    className={`admin-row ${isNew ? 'fade-in' : ''} ${isUpdated ? 'updating-row' : ''}`}
                   >
                     <td className="name-cell">
                       <div className="d-flex align-items-center">
@@ -280,34 +384,31 @@ const AdminUsersTable = () => {
                             src={admin.photo} 
                             alt={`${admin.firstname} ${admin.lastname}`}
                             className="admin-avatar me-2"
+                            style={{ width: '32px', height: '32px', borderRadius: '50%' }}
                           />
                         )}
                         <span>{admin.firstname} {admin.lastname}</span>
                       </div>
                     </td>
                     <td className="email-cell">{admin.email}</td>
+                    {showIp && (
+                      <td className="ip-cell">
+                        <span className="font-monospace">{ipAddress}</span>
+                      </td>
+                    )}
                     <td className="login-time-cell">
-                      {loginTime ? (
-                        <span title={loginTime.toISOString()}>
-                          {loginTime.toLocaleString()}
-                        </span>
-                      ) : (
-                        <span className="text-muted">Not logged in</span>
-                      )}
+                      {loginTime ? loginTime.toLocaleString() : <span className="text-muted">Not logged in</span>}
                     </td>
                     <td className="duration-cell">
                       <span className="font-monospace">{formatDuration(durationMs)}</span>
                     </td>
                     <td className="status-cell">
-                      <span className={`badge status-badge ${
-                        status === 'active' ? 'bg-success' :
-                        status === 'idle' ? 'bg-warning text-dark' : 'bg-secondary'
-                      }`}>
-                        <i className={`status-icon ${
-                          status === 'active' ? 'fas fa-circle' :
-                          status === 'idle' ? 'fas fa-clock' : 'fas fa-minus-circle'
-                        }`}></i>
-                        {status.charAt(0).toUpperCase() + status.slice(1)}
+                      <span className={`badge status-badge ${statusDisplay.class}`}>
+                        <i className={`fas me-1 ${statusDisplay.icon}`}></i>
+                        {statusDisplay.label}
+                        {admin.currentStatus === 'idle' && (
+                          <i className="fas fa-hourglass-half ms-1"></i>
+                        )}
                       </span>
                     </td>
                   </tr>
