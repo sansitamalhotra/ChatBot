@@ -7,9 +7,9 @@ const dotenv = require("dotenv");
 const cors = require("cors");
 const cookieParser = require("cookie-parser");
 const jwt = require('jsonwebtoken');
-
 const User = require('./models/userModel');
 const { setupSocketHandlers } = require('./services/socketService')
+const { logWithIcon } = require('./services/consoleIcons');
 
 dotenv.config();
 const dbConnect = require("./configs/dbConnect");
@@ -17,6 +17,8 @@ const app = express();
 
 // Create an HTTP Server For Socket Integration
 const server = http.createServer(app);
+
+app.set('trust proxy', true);
 
 // Parse application/json and urlencoded
 app.use(bodyParser.json());
@@ -33,16 +35,38 @@ app.use(cookieParser());
 let allowedOrigins = [];
 if (process.env.ALLOW_ORIGINS) {
   try {
-    allowedOrigins = JSON.parse(process.env.ALLOW_ORIGINS);
+    // Clean up the environment variable by removing line breaks and extra whitespace
+    const cleanedOrigins = process.env.ALLOW_ORIGINS
+      .replace(/\n/g, '') // Remove line breaks
+      .replace(/\s+/g, ' ') // Replace multiple spaces with single space
+      .trim(); // Remove leading/trailing whitespace
+    
+    allowedOrigins = JSON.parse(cleanedOrigins);
     if (!Array.isArray(allowedOrigins)) {
       throw new Error('ALLOW_ORIGINS is not an array');
     }
+    logWithIcon.success(`Parsed ${allowedOrigins.length} allowed origins successfully`);
   } catch (err) {
-    console.error('Error parsing ALLOW_ORIGINS from .env:', err);
-    allowedOrigins = [];
+    logWithIcon.error(`Error parsing ALLOW_ORIGINS from .env:`, err);
+    logWithIcon.warning(`Raw ALLOW_ORIGINS value: "${process.env.ALLOW_ORIGINS}"`);
+    
+    // Fallback: try to extract URLs manually if JSON parsing fails
+    try {
+      const urlPattern = /https?:\/\/[^\s",\]]+/g;
+      const extractedUrls = process.env.ALLOW_ORIGINS.match(urlPattern);
+      if (extractedUrls && extractedUrls.length > 0) {
+        allowedOrigins = extractedUrls;
+        logWithIcon.warning(`Fallback: Extracted ${allowedOrigins.length} URLs from ALLOW_ORIGINS`);
+      } else {
+        allowedOrigins = [];
+      }
+    } catch (fallbackErr) {
+      logWithIcon.error(`Fallback parsing also failed:`, fallbackErr);
+      allowedOrigins = [];
+    }
   }
 } else {
-  console.warn('ALLOW_ORIGINS env not set. Defaulting to *');
+  logWithIcon.warning(`ALLOW_ORIGINS env not set. Defaulting to *`);
   allowedOrigins = ['*'];
 }
 
@@ -75,13 +99,13 @@ io.use(async (socket, next) => {
   try {
     const token = socket.handshake.auth.token;
     if (!token) {
-      console.error('Socket auth failed: Missing token');
+      logWithIcon.error(`Socket auth failed: Missing token`);
       return next(new Error('Authentication Failed: Missing Token!'));
     }
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET_KEY);
     if (!decoded?.id && !decoded?.userId) {
-      console.error('Socket auth failed: Invalid token payload', decoded);
+      logWithIcon.error(`Socket auth failed: Invalid token payload`, decoded);
       return next(new Error('Authentication Failed: Invalid Token!'));
     }
 
@@ -89,7 +113,7 @@ io.use(async (socket, next) => {
     const userId = decoded.id || decoded.userId;
     const user = await User.findById(userId).select('-password').lean();
     if (!user) {
-      console.error(`Socket auth failed: User not found (ID: ${userId})`);
+      logWithIcon.error(`Socket auth failed: User not found (ID: ${userId})`);
       return next(new Error('Authentication Failed: User Not Found!'));
     }
 
@@ -104,10 +128,10 @@ io.use(async (socket, next) => {
       photo: user.photo
     };
     
-    console.log(`✅ Socket authenticated for user: ${user.email} (Role: ${user.role})`);
+    logWithIcon.success(`Socket authenticated for user: ${user.email} (Role: ${user.role})`);
     next();
   } catch (err) {
-    console.error('Socket Auth Error:', err.message);
+    logWithIcon.error('Socket Auth Error:', err.message);
     next(new Error('Authentication Failed: Invalid Token!'));
   }
 });
@@ -142,7 +166,7 @@ const { timeStamp } = require('console');
 Object.values(staticPaths).forEach(dirPath => {
   if (!fs.existsSync(dirPath)) {
     fs.mkdirSync(dirPath, { recursive: true });
-    console.log(`Created directory: ${dirPath}`);
+    logWithIcon.success(`Created directory: ${dirPath}`);
   }
 });
 
@@ -207,13 +231,13 @@ app.use("/api/v1/applicant", require("./routes/applicantRoute"));
 app.use("/api/v1/resume", require("./routes/resumeRoutes"));
 app.use("/api/v1/subscribers", require("./routes/subscribeRoutes"));
 app.use('/api/v1/liveAgent', require('./routes/liveAgentRoutes'));
-app.use('/api/v1/chats', require('./routes/chatRoutes'));
+// app.use('/api/v1/chats', require('./routes/chatRoutes'));
 app.use("/api/v1/users", require("./routes/userRoutes"));
 app.use("/api/v1/photo", require("./routes/uploadUserPhotoRoutes"));
 
 // NOW serve frontend static files AFTER API routes are defined
 app.use(express.static(staticPaths.frontend));
-console.log(`Serving Frontend Static Files From: ${staticPaths.frontend}`);
+logWithIcon.success(`Serving Frontend Static Files From: ${staticPaths.frontend}`);
 
 // This should be after all API routes - catch-all for SPA navigation
 app.get('*', (req, res) => {
@@ -249,7 +273,7 @@ app.get('*', (req, res) => {
 
 // Error handling middleware - improved with more detailed logging
 app.use((err, req, res, next) => {
-  console.error(`[ERROR] ${req.method} ${req.path}: ${err.stack || err}`);
+logWithIcon.error(`[ERROR] ${req.method} ${req.path}: ${err.stack || err}`);
   
   const statusCode = err.statusCode || 500;
   const message = err.message || 'Internal Server Error';
@@ -268,11 +292,11 @@ app.use((err, req, res, next) => {
 
 // Start the server
 server.listen(PORT, function () { 
-  console.log(
+  logWithIcon.success(
     `%%%%%%%====== ProsoftSynergies API Server is running Successfully on Port:${PORT} ${environment} MODE =======%%%%%%%%`.bgCyan.white.bold
   );
-  console.log(`@@@@@@@====== Frontend static files served from: ${staticPaths.frontend} =======@@@@@@@`.bgBlue.white.bold);
+  logWithIcon.success(`@@@@@@@====== Frontend static files served from: ${staticPaths.frontend} =======@@@@@@@`.bgBlue.white.bold);
 
-  console.log(`Health check available at: http://localhost:${PORT}/health`);
+  logWithIcon.success(`Health check available at: http://localhost:${PORT}/health`);
 });
 module.exports = { app, server, io };

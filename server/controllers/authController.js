@@ -16,7 +16,6 @@ const sharp = require('sharp');
 const { logActivity } = require('../utils/logActivity');
 const uploadPhoto = multer({ dest: './uploads/UserProfilePhotos' });
 
-const { io } = require('../server');
 
 module.exports = {
     // ================= Register New User Method Starts Here ======================== //
@@ -96,9 +95,9 @@ module.exports = {
           await transporter.sendMail({
             from: "hrpspl@prosoftsynergies.com",
             to: user.email,
-            subject: "ProSoft Email Verification to Complete Your Account Registration!!",
-            text: "<b>ProSoft Email Verification</b>",
-            html: `<p>Kindly click on the link to verify your account with ProSoft. <br /><br /><a href="${url}" style="display: inline-block; padding: 10px 20px; font-size: 16px; color: #fff; background-color: #007bff; text-decoration: none; border-radius: 5px; text-align: center; font-family: Trebuchet MS, sans-serif", border-radius: 0>Click to Confirm</a></p>
+            subject: "ProSoftSynergies Email Verification to Complete Your Account Registration!!",
+            text: "<b>ProSoftSynergies Email Verification</b>",
+            html: `<p>Kindly click on the link to verify your account with ProSoftSynergies. <br /><br /><a href="${url}" style="display: inline-block; padding: 10px 20px; font-size: 16px; color: #fff; background-color: #007bff; text-decoration: none; border-radius: 5px; text-align: center; font-family: Trebuchet MS, sans-serif", border-radius: 0>Click to Confirm</a></p>
             
             `,
           });
@@ -144,7 +143,7 @@ module.exports = {
           }).save();
 
           const url = `${process.env.FRONTEND_BASE_URL}/${user.id}/verify/${token.token}`;
-          await sendMail(user.email, "Verify Your ProSoft Email Account", url);
+          await sendMail(user.email, "Verify Your ProsoftSynergies Email Account", url);
         }
         return res.status(400).send({
           success: true,
@@ -240,10 +239,15 @@ module.exports = {
         logUser
       });
 
+      if (!req) {
+        console.warn('Request object missing for activity logging');
+        return;
+      }
+
       // Log login activity asynchronously for ALL users
       (async () => {
         try {
-          await logActivity(user._id, savedSession._id, 'login', req, user.role);
+          await logActivity(user._id, savedSession._id, user.email, 'login', req, user.role);
         } catch (err) {
           console.error('Error logging login activity:', err);
         }
@@ -300,10 +304,8 @@ logoutController: async (req, res) => {
     const { user } = req;
     if (!user) return res.status(404).json({ success: false, message: 'ACCESS DENIED' });
 
-    // Get io instance from request
     const io = req.app.get('socketio');
 
-    // End current session
     if (user.currentSessionId) {
       const session = await ActivitySession.findById(user.currentSessionId);
       if (session && session.sessionStatus !== 'ended') {
@@ -313,7 +315,6 @@ logoutController: async (req, res) => {
       }
     }
 
-    // Update user status
     const updatedUser = await User.findByIdAndUpdate(
       user._id,
       {
@@ -325,18 +326,18 @@ logoutController: async (req, res) => {
       { new: true }
     );
 
-    // Emit logout event to all status monitors
-    if (io && (user.role === 1 || user.role === 2)) {
+    // Safely handle socket emission using updatedUser
+    if (io && updatedUser && (updatedUser.role === 1 || updatedUser.role === 2)) {
       io.to('admins').to('status-monitors').emit('user:statusChanged', {
-        userId: user._id.toString(),
+        userId: updatedUser._id.toString(), // Use updatedUser here
         status: 'offline',
         userInfo: {
-          _id: user._id,
-          firstname: user.firstname,
-          lastname: user.lastname,
-          email: user.email,
-          role: user.role,
-          photo: user.photo
+          _id: updatedUser._id,
+          firstname: updatedUser.firstname,
+          lastname: updatedUser.lastname,
+          email: updatedUser.email,
+          role: updatedUser.role,
+          photo: updatedUser.photo
         },
         timestamp: Date.now()
       });
@@ -403,8 +404,8 @@ logoutController: async (req, res) => {
         from: process.env.USER,
         to: user.email,
         subject: "Password Reset",
-        text: "<b>ProSoft Email Verification</b>",
-        html: `<p>Kindly Click on this link to reset your password with ProSoft. <br /><a href="${resetUrl}" class="btn btn-lg -btn-success" style="color: 'green'">Click To Verify</a></p>`, 
+        text: "<b>ProsoftSynergies Email Verification</b>",
+        html: `<p>Kindly Click on this link to reset your password with ProsoftSynergies. <br /><a href="${resetUrl}" class="btn btn-lg -btn-success" style="color: 'green'">Click To Verify</a></p>`, 
       };
 
       await transporter.sendMail(mailOptions);

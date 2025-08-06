@@ -13,14 +13,14 @@ const sendMail = async (options) => {
         port: 587,
         secure: false,
         auth: {
-        user: "smsstbspspl@gmail.com",
-        pass: "nlzd ipbi sxxd yhbv ",
+            user: process.env.EMAIL_NOTIFICATION_USER,
+            pass: process.env.EMAIL_NOTIFICATION_PASS,
         },
     })
     );
 
     let mailOptions = {
-    from: "smsstbspspl@gmail.com",
+    from: "kenny.offor@gmail.com",
     to: options.email,
     subject: options.subject,
     text: options.message,

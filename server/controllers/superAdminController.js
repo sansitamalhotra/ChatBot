@@ -6,6 +6,7 @@ const ApplicantJobApplication = require("../models/applicantJobApplicationModel"
 const ActivitySession = require('../models/activitySessionModel');
 const mongoose = require('mongoose');
 const { getClientIP } = require('../services/socketService');
+const { logWithIcon } = require('../services/consoleIcons');
 
 const VALID_USER_STATUSES = ['offline', 'online', 'active', 'idle', 'away'];
 module.exports = 
@@ -216,7 +217,7 @@ module.exports =
         };
       }));
       
-      console.log(`📊 Fetched ${adminsWithSession.length} admins with sessions`);
+      logWithIcon.statistics(`Fetched ${adminsWithSession.length} admins with sessions`);
       
       res.status(200).json({ 
         success: true, 
@@ -296,7 +297,7 @@ module.exports =
       }
 
       const activityData = data;
-      console.log('📬 Received beacon activity:', activityData);
+      logWithIcon.inbox(`Received beacon activity:`, activityData);
 
       const newLog = new ActivityLog({
         userId: activityData.userId,

@@ -1,14 +1,17 @@
 const nodemailer = require('nodemailer');
 const hbs = require('nodemailer-express-handlebars');
 const path = require('path');
+const dotenv = require("dotenv");
+
+dotenv.config();
 
 const sendMail = async (to, url, name, subject, template) => {
     const transporter = nodemailer.createTransport({
         host: 'smtp.gmail.com',
         port: 587,
         auth: {
-            user: process.env.SMPT_MAIL,
-            pass: process.env.SMPT_PASSWORD,
+           user: process.env.EMAIL_NOTIFICATION_USER,
+           pass: process.env.EMAIL_NOTIFICATION_PASS,
         },
     });
 

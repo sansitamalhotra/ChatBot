@@ -16,6 +16,7 @@ import FavIconLogo from "./assets/img/FaviIcon-Logo.png";
 
 // eslint-disable-next-line
 import { ToastContainer, toast } from "react-toastify";
+import "react-toastify/dist/ReactToastify.css";
 import styled from "styled-components";
 import "./App.css";
 
@@ -160,39 +161,40 @@ function App() {
   `;
 // eslint-disable-next-line
   const [auth, setAuth] = useAuth();
-  // eslint-disable-next-line
   const [user, setUser] = useState({});
   const params = useParams();
   const { handleLogout } = useLogout();
 
-  
+  // Fetch user by param _id if available
+  useEffect(() => {
+    const fetchRegUserById = async () => {
+      if (!params?._id) return;
+      try {
+        const { data } = await API.get(`/api/v1/users/fetchRegUserById/${params._id}`);
+        if (data?.user) setUser(data.user);
+      } catch (error) {
+        console.error(error);
+      }
+    };
+    fetchRegUserById();
+  }, [params?._id]);
 
+  // Sync localStorage user auth details on mount
+  useEffect(() => {
+    const storedUser = localStorage.getItem("userAuthDetails");
+    if (storedUser) {
+      try {
+        const parsedUser = JSON.parse(storedUser);
+        setUser(parsedUser);
+      } catch (e) {
+        console.error('Failed to parse "userAuthDetails" from localStorage:', e);
+      }
+    }
+  }, []);
 
-const fetchRegUserById = async () => {
-  try 
-  {
-    const { data } = await API.get(`/api/v1/users/fetchRegUserById/${params._id}`);
-    setUser(data.user);
-  } catch (error) {
-    console.log(error);
-  }
-};
-  // eslint-disable-next-line
-useEffect(() => {
-  if (params?._id) fetchRegUserById();
-  // eslint-disable-next-line
-}, [params?._id]);
+  const isAdmin = auth?.user?.role === 1;
 
-useEffect(() => {
-  const userId = JSON.parse(localStorage.getItem("userAuthDetails"));
-  if (userId) {
-    setUser(userId);
-  }
-  // eslint-disable-next-line
-}, []);
-  
-const isAdmin = auth?.user?.role === 1;
-
+  // Initialize idle tracker only once user and auth are ready
   useUserIdleTracker({
     onAutoLogout: isAdmin ? handleLogout : undefined
   });

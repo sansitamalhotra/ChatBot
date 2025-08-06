@@ -4,7 +4,7 @@ import API from "../helpers/API";
 import { useAuth } from "../Context/AuthContext";
 import { LogoutNavbarLink } from './Logout/LogoutNavbar';
 import { LogoutLink } from './Logout/Logout';
-
+import ChatBotIcon from '../components/ChatBotIcon/ChatBotIcon';
 import { FaLinkedin, FaFacebook, FaWhatsapp } from 'react-icons/fa';
 import { BsTwitterX } from "react-icons/bs";
 
@@ -65,6 +65,7 @@ const Footer = () => {
     //assigning location variable
     const location = useLocation();
   return (
+    <>
     <footer className="footer">
       <div className="footer-container">
         <div className="footer-columns">
@@ -246,7 +247,9 @@ const Footer = () => {
           </div>
         </div>
       </div>
+       <ChatBotIcon />
     </footer>
+    </>
   );
 };
 

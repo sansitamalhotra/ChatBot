@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState, useRef, useCallback } from 'react';
 import { io } from 'socket.io-client';
 import { useAuth } from './AuthContext';
+import { logWithIcon } from '../utils/consoleIcons';
 
 const SocketContext = createContext();
 
@@ -29,7 +30,7 @@ export const SocketProvider = ({ children }) => {
 
   const cleanupSocket = useCallback(() => {
     if (socketRef.current) {
-      console.log('🧹 Cleaning up existing socket');
+      logWithIcon.cleanup('Cleaning up Existing Socket')
       socketRef.current.removeAllListeners();
       socketRef.current.disconnect();
       socketRef.current = null;
@@ -43,13 +44,13 @@ export const SocketProvider = ({ children }) => {
   const createSocket = useCallback(() => {
     // Prevent multiple connection attempts
     if (connectionAttemptRef.current) {
-      console.log('⚠️ Connection attempt already in progress');
+      logWithIcon.warning('Connection attempt already in progress');
       return null;
     }
 
     // FIXED: Use the correctly extracted values
     if (!isAuthenticated || !token || !user) {
-      console.log('❌ Cannot create socket: missing auth data', { 
+      logWithIcon.error('Cannot create socket: missing auth data', { 
         isAuthenticated, 
         hasToken: !!token, 
         hasUser: !!user 
@@ -58,15 +59,16 @@ export const SocketProvider = ({ children }) => {
     }
 
     connectionAttemptRef.current = true;
-    console.log('🔌 Creating socket connection for:', user?.email);
+    logWithIcon.disconnect('Creating socket connection for: ' + user?.email);
     setConnectionStatus('connecting');
     setError(null);
     
     // Clean up existing socket first
     cleanupSocket();
     
+    //const serverUrl = process.env.REACT_APP_API_URL || 'https://server.prosoftsynergies.com';
     const serverUrl = process.env.REACT_APP_API_URL || 'http://localhost:8000';
-    console.log('🌐 Connecting to server:', serverUrl);
+    logWithIcon.network('Connecting to server: ' + serverUrl)
     
     const newSocket = io(serverUrl, {
       auth: { 
@@ -97,7 +99,7 @@ export const SocketProvider = ({ children }) => {
 
     // Connection event handlers
     newSocket.on('connect', () => {
-      console.log('✅ Socket connected with ID:', newSocket.id);
+      logWithIcon.success('Socket connected with ID:', newSocket.id);
       connectionAttemptRef.current = false;
       setIsConnected(true);
       setConnectionStatus('connected');
@@ -106,7 +108,7 @@ export const SocketProvider = ({ children }) => {
       
       // Emit initial connection status for admin users
       if (user && user.role === 1) {
-        console.log('📡 Emitting initial admin connection');
+        logWithIcon.broadcast('Emitting initial admin connection')
         newSocket.emit('admin:connected', {
           userId: user._id || user.userId,
           userInfo: {
@@ -137,7 +139,7 @@ export const SocketProvider = ({ children }) => {
     });
 
     newSocket.on('disconnect', (reason) => {
-      console.log('❌ Socket disconnected:', reason);
+      logWithIcon.error('Socket disconnected:', reason);
       connectionAttemptRef.current = false;
       setIsConnected(false);
       setConnectionStatus('disconnected');
@@ -146,13 +148,13 @@ export const SocketProvider = ({ children }) => {
       if (reason === 'io server disconnect' || 
           reason === 'transport close' || 
           reason === 'transport error') {
-        console.log('🔄 Will attempt to reconnect after disconnect reason:', reason);
+        logWithIcon.reconnect('Will attempt to reconnect after disconnect reason: ' + reason)
         handleReconnect();
       }
     });
 
     newSocket.on('connect_error', (error) => {
-      console.error('🚫 Connection error:', error);
+      logWithIcon.error('Connection error: ' + error)
       connectionAttemptRef.current = false;
       setError(error.message || 'Connection failed');
       setConnectionStatus('error');
@@ -162,7 +164,7 @@ export const SocketProvider = ({ children }) => {
           error.message.includes('Unauthorized') ||
           error.message.includes('Invalid token')
         )) {
-        console.log('🔑 Authentication failed, logging out');
+        logWithIcon.auth('Authentication failed, logging out')
         cleanupSocket();
         logout();
       } else {
@@ -171,12 +173,12 @@ export const SocketProvider = ({ children }) => {
     });
 
     newSocket.on('reconnect_attempt', (attempt) => {
-      console.log(`🔄 Reconnect attempt ${attempt}/${maxReconnectAttempts}`);
+      logWithIcon.reconnect(`Reconnect attempt ${attempt}/${maxReconnectAttempts}`);
       setConnectionStatus(`reconnecting (${attempt}/${maxReconnectAttempts})`);
     });
 
     newSocket.on('reconnect', (attempt) => {
-      console.log(`✅ Reconnected after ${attempt} attempts`);
+      logWithIcon.success(`Reconnected after ${attempt} attempts`);
       connectionAttemptRef.current = false;
       setIsConnected(true);
       setConnectionStatus('connected');
@@ -184,7 +186,7 @@ export const SocketProvider = ({ children }) => {
     });
 
     newSocket.on('reconnect_failed', () => {
-      console.error('🚫 Permanent connection failure');
+      logWithIcon.error('Permanent connection failure');
       connectionAttemptRef.current = false;
       setError('Connection failed permanently');
       setConnectionStatus('failed');
@@ -192,7 +194,7 @@ export const SocketProvider = ({ children }) => {
 
     // Add auth error handler
     newSocket.on('auth_error', (error) => {
-      console.error('🔑 Authentication error:', error);
+      logWithIcon.auth('Authentication error: ' + error)
       cleanupSocket();
       logout();
     });
@@ -202,13 +204,13 @@ export const SocketProvider = ({ children }) => {
 
   const handleReconnect = useCallback(() => {
     if (reconnectAttemptsRef.current >= maxReconnectAttempts) {
-      console.log('🚫 Max reconnect attempts reached');
+      logWithIcon.error('Max reconnect attempts reached')
       setConnectionStatus('failed');
       return;
     }
 
     if (connectionAttemptRef.current) {
-      console.log('⚠️ Reconnect already in progress');
+      logWithIcon.warning('Reconnect already in progress')
       return;
     }
 
@@ -220,11 +222,11 @@ export const SocketProvider = ({ children }) => {
       30000
     );
     
-    console.log(`🔄 Scheduling reconnect attempt ${reconnectAttemptsRef.current} in ${delay}ms`);
+    logWithIcon.reconnect(`Scheduling reconnect attempt ${reconnectAttemptsRef.current} in ${delay}ms`);
     setConnectionStatus(`reconnecting in ${Math.round(delay/1000)}s`);
     
     reconnectTimeoutRef.current = setTimeout(() => {
-      console.log(`🔄 Executing reconnect attempt ${reconnectAttemptsRef.current}`);
+      logWithIcon.reconnect(`Executing reconnect attempt ${reconnectAttemptsRef.current}`);
       const newSocket = createSocket();
       if (newSocket) {
         setSocket(newSocket);
@@ -233,7 +235,7 @@ export const SocketProvider = ({ children }) => {
   }, [createSocket]);
 
   const disconnect = useCallback(() => {
-    console.log('🔌 Manual disconnect requested');
+    logWithIcon.disconnect('Manual disconnect requested')
     
     // Emit offline status before disconnecting
     if (socketRef.current && isConnected && user) {
@@ -253,11 +255,11 @@ export const SocketProvider = ({ children }) => {
   useEffect(() => {
     // FIXED: Wait for auth to be initialized before attempting connection
     if (!isInitialized) {
-      console.log('⏳ Waiting for auth initialization...');
+      logWithIcon.waiting('Waiting for auth initialization...')
       return;
     }
 
-    console.log('🔄 Auth state effect triggered:', { 
+    logWithIcon.reconnect('Auth state effect triggered:', { 
       isAuthenticated, 
       hasToken: !!token, 
       hasUser: !!user,
@@ -269,16 +271,16 @@ export const SocketProvider = ({ children }) => {
     if (isAuthenticated && token && user) {
       // Only create socket if we don't have a connected one
       if (!socketRef.current || !isConnected) {
-        console.log('🚀 Creating new socket connection');
+        logWithIcon.launch('Creating new socket connection');
         const newSocket = createSocket();
         if (newSocket) {
           setSocket(newSocket);
         }
       } else {
-        console.log('ℹ️ Socket already connected, skipping creation');
+        logWithIcon.info('Socket already connected, skipping creation')
       }
     } else {
-      console.log('🧹 Auth state invalid, cleaning up socket');
+      logWithIcon.cleanup('Auth state invalid, cleaning up socket')
       disconnect();
     }
   }, [isAuthenticated, token, user, isInitialized, isConnected, createSocket, disconnect]);
@@ -286,7 +288,7 @@ export const SocketProvider = ({ children }) => {
   // Cleanup on unmount
   useEffect(() => {
     return () => {
-      console.log('🧹 SocketProvider unmounting');
+      logWithIcon.cleanup('SocketProvider unmounting');
       if (socketRef.current && user) {
         // Emit offline status before cleanup
         socketRef.current.emit('user:activity', {

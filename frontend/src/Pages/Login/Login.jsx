@@ -51,6 +51,8 @@ const Login = () => {
     }
   };
 
+  
+
   // Function to get redirect path based on user role
   const getRedirectPath = (role) => {
     switch (role) {
@@ -72,7 +74,7 @@ const Login = () => {
     if (isInitialized && auth?.user && auth?.token) {
       const redirectTo = getRedirectPath(auth.user.role);
       if (redirectTo) {
-        console.log("User already authenticated, redirecting to:", redirectTo);
+        console.log("User already authenticated, redirecting to:", redirectTo);        
         setRedirectPath(redirectTo);
       }
     }

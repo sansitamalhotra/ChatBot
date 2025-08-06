@@ -206,135 +206,116 @@ businessHoursSchema.virtual('formattedHours').get(function() {
 // Method to check if current time is within business hours
 businessHoursSchema.methods.isCurrentlyOpen = function() {
   const moment = require('moment-timezone');
-  
-  // Get current time in the business timezone
   const now = moment().tz(this.timezone);
-  const currentDate = now.format('YYYY-MM-DD');
   const currentTime = now.format('HH:mm');
   const currentDay = now.format('dddd').toLowerCase();
+  const currentDate = now.format('YYYY-MM-DD');
   
-  // Check if today is a holiday
+  // Check if it's a holiday
   const isHoliday = this.holidays.some(holiday => {
     if (holiday.recurring) {
-      // For recurring holidays, check month and day
       const holidayDate = moment(holiday.date);
-      return now.month() === holidayDate.month() && now.date() === holidayDate.date();
-    } else {
-      // For non-recurring holidays, check exact date
-      return moment(holiday.date).format('YYYY-MM-DD') === currentDate;
+      return now.format('MM-DD') === holidayDate.format('MM-DD');
     }
+    return moment(holiday.date).format('YYYY-MM-DD') === currentDate;
   });
   
-  if (isHoliday) {
-    return false;
-  }
+  if (isHoliday) return false;
   
-  // Check for special hours for today
-  const todaySpecialHours = this.specialHours.find(sh => 
+  // Check for special hours
+  const specialHour = this.specialHours.find(sh => 
     moment(sh.date).format('YYYY-MM-DD') === currentDate
   );
   
-  if (todaySpecialHours) {
-    if (todaySpecialHours.isClosed) {
-      return false;
-    }
-    // Use special hours instead of regular hours
-    return currentTime >= todaySpecialHours.hours.start && 
-           currentTime <= todaySpecialHours.hours.end;
+  if (specialHour) {
+    if (specialHour.isClosed) return false;
+    return currentTime >= specialHour.hours.start && currentTime <= specialHour.hours.end;
   }
   
-  // Check if today is a working day
-  if (!this.workingDays.includes(currentDay)) {
-    return false;
-  }
+  // Check regular business hours
+  if (!this.workingDays.includes(currentDay)) return false;
   
-  // Check if current time is within working hours
   return currentTime >= this.workingHours.start && currentTime <= this.workingHours.end;
 };
 
-// Method to get appropriate message for current status
-businessHoursSchema.methods.getCurrentStatusMessage = function() {
-  if (this.isCurrentlyOpen()) {
-    return null; // No message needed when open
-  }
-  
+// Method to get next available time
+businessHoursSchema.methods.getNextAvailableTime = function() {
   const moment = require('moment-timezone');
-  const now = moment().tz(this.timezone);
-  const currentDate = now.format('YYYY-MM-DD');
-  const currentDay = now.format('dddd').toLowerCase();
+  let nextTime = moment().tz(this.timezone);
   
-  // Check if it's a holiday
-  const todayHoliday = this.holidays.find(holiday => {
-    if (holiday.recurring) {
-      const holidayDate = moment(holiday.date);
-      return now.month() === holidayDate.month() && now.date() === holidayDate.date();
-    } else {
-      return moment(holiday.date).format('YYYY-MM-DD') === currentDate;
+  // Look ahead up to 14 days
+  for (let i = 0; i < 14; i++) {
+    const checkDate = nextTime.clone().add(i, 'days');
+    const dayName = checkDate.format('dddd').toLowerCase();
+    const dateStr = checkDate.format('YYYY-MM-DD');
+    
+    // Check if it's a holiday
+    const isHoliday = this.holidays.some(holiday => {
+      if (holiday.recurring) {
+        const holidayDate = moment(holiday.date);
+        return checkDate.format('MM-DD') === holidayDate.format('MM-DD');
+      }
+      return moment(holiday.date).format('YYYY-MM-DD') === dateStr;
+    });
+    
+    if (isHoliday) continue;
+    
+    // Check for special hours
+    const specialHour = this.specialHours.find(sh => 
+      moment(sh.date).format('YYYY-MM-DD') === dateStr
+    );
+    
+    if (specialHour && !specialHour.isClosed) {
+      return checkDate.hour(parseInt(specialHour.hours.start.split(':')[0]))
+                    .minute(parseInt(specialHour.hours.start.split(':')[1]))
+                    .format('dddd, MMMM Do YYYY, h:mm A z');
     }
-  });
-  
-  if (todayHoliday) {
-    return this.settings.holidayMessage;
+    
+    // Check regular working days
+    if (this.workingDays.includes(dayName)) {
+      const [startHour, startMinute] = this.workingHours.start.split(':');
+      return checkDate.hour(parseInt(startHour))
+                    .minute(parseInt(startMinute))
+                    .format('dddd, MMMM Do YYYY, h:mm A z');
+    }
   }
   
-  // Check for special hours
-  const todaySpecialHours = this.specialHours.find(sh => 
-    moment(sh.date).format('YYYY-MM-DD') === currentDate
-  );
-  
-  if (todaySpecialHours && todaySpecialHours.isClosed) {
-    return todaySpecialHours.reason || this.outsideHoursMessage;
-  }
-  
-  // Check if it's weekend
-  if (!this.workingDays.includes(currentDay)) {
-    return this.settings.weekendMessage;
-  }
-  
-  // Default outside hours message
-  return this.outsideHoursMessage;
+  return 'Unknown - Please contact support';
 };
 
-// Method to check if new chats should be allowed
-businessHoursSchema.methods.shouldAllowNewChats = function() {
-  if (!this.isCurrentlyOpen()) {
-    return false;
-  }
+// Method to check if we're close to closing time
+businessHoursSchema.methods.isNearClosing = function() {
+  if (!this.isCurrentlyOpen()) return false;
   
   const moment = require('moment-timezone');
   const now = moment().tz(this.timezone);
-  const currentTime = now.format('HH:mm');
+  const [endHour, endMinute] = this.workingHours.end.split(':');
+  const closingTime = now.clone().hour(parseInt(endHour)).minute(parseInt(endMinute));
+  const warningTime = closingTime.clone().subtract(this.settings.warningMinutesBeforeClose, 'minutes');
   
-  // Calculate time until close
-  const endTime = moment(this.workingHours.end, 'HH:mm');
-  const currentMoment = moment(currentTime, 'HH:mm');
-  const minutesUntilClose = endTime.diff(currentMoment, 'minutes');
-  
-  return minutesUntilClose > this.settings.allowNewChatsMinutesBeforeClose;
+  return now.isAfter(warningTime);
 };
 
-// Method to check if warning should be shown
-businessHoursSchema.methods.shouldShowCloseWarning = function() {
-  if (!this.isCurrentlyOpen()) {
-    return false;
-  }
-  
-  const moment = require('moment-timezone');
-  const now = moment().tz(this.timezone);
-  const currentTime = now.format('HH:mm');
-  
-  // Calculate time until close
-  const endTime = moment(this.workingHours.end, 'HH:mm');
-  const currentMoment = moment(currentTime, 'HH:mm');
-  const minutesUntilClose = endTime.diff(currentMoment, 'minutes');
-  
-  return minutesUntilClose <= this.settings.warningMinutesBeforeClose && minutesUntilClose > 0;
-};
-
-// Static method to get active business hours configuration
+// Static method to get active business hours
 businessHoursSchema.statics.getActive = function() {
   return this.findOne({ isActive: true });
 };
 
-// Export the model
+// Static method to create default business hours
+businessHoursSchema.statics.createDefault = function(createdBy) {
+  return this.create({
+    timezone: 'America/New_York',
+    workingHours: { start: '09:00', end: '18:00' },
+    workingDays: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'],
+    outsideHoursMessage: "I'm sorry, but our live agents are currently unavailable. Our business hours are 9:00 AM - 6:00 PM EST, Monday through Friday.",
+    outsideHoursOptions: [
+      'Search for jobs',
+      'Partnership information', 
+      'Application help',
+      'Leave a message for an agent'
+    ],
+    createdBy
+  });
+};
+
 module.exports = mongoose.model('BusinessHours', businessHoursSchema);
