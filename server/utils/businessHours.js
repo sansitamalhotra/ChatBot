@@ -1,228 +1,187 @@
 // utils/businessHours.js
 const moment = require('moment-timezone');
 const BusinessHours = require('../models/businessHoursModel');
-const logWithIcon = require('../services/consoleIcons');
 
 class BusinessHoursUtil {
   constructor() {
-    this.cachedConfig = null;
-    this.cacheExpiry = null;
-    this.cacheTimeout = 5 * 60 * 1000; // 5 minutes cache
+    this.cache = new Map();
+    this.cacheTimeout = 5 * 60 * 1000; // 5 minutes
   }
 
-  // Get cached or fresh business hours configuration
-  async getBusinessHoursConfig() {
-    const now = new Date();
+  /**
+   * Clear cache
+   */
+  clearCache() {
+    this.cache.clear();
+  }
+
+  /**
+   * Get cached data or fetch fresh
+   */
+  async getCachedBusinessHours() {
+    const cacheKey = 'active_business_hours';
+    const cached = this.cache.get(cacheKey);
     
-    if (this.cachedConfig && this.cacheExpiry && now < this.cacheExpiry) {
-      return this.cachedConfig;
+    if (cached && (Date.now() - cached.timestamp < this.cacheTimeout)) {
+      return cached.data;
     }
 
-    try {
-      this.cachedConfig = await BusinessHours.getActive();
-      this.cacheExpiry = new Date(now.getTime() + this.cacheTimeout);
-      return this.cachedConfig;
-    } catch (error) {
-      logWithIcon.error('Error fetching business hours config:', error);
-      // Return default config if database fails
-      return this.getDefaultConfig();
-    }
-  }
-
-  // Default configuration fallback
-  getDefaultConfig() {
-    return {
-      timezone: 'America/New_York',
-      workingHours: { start: '09:00', end: '18:00' },
-      workingDays: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'],
-      holidays: [],
-      specialHours: [],
-      settings: {
-        warningMinutesBeforeClose: 30,
-        allowNewChatsMinutesBeforeClose: 15
-      }
-    };
-  }
-
-  // Check if current time is within business hours
-  async isWithinBusinessHours() {
-    const config = await this.getBusinessHoursConfig();
-    if (!config) return false;
-
-    const now = moment().tz(config.timezone);
-    const currentTime = now.format('HH:mm');
-    const currentDay = now.format('dddd').toLowerCase();
-    const currentDate = now.format('YYYY-MM-DD');
-
-    // Check if it's a holiday
-    const isHoliday = config.holidays.some(holiday => {
-      if (holiday.recurring) {
-        const holidayDate = moment(holiday.date);
-        return now.format('MM-DD') === holidayDate.format('MM-DD');
-      }
-      return moment(holiday.date).format('YYYY-MM-DD') === currentDate;
+    const businessHours = await BusinessHours.getActive();
+    this.cache.set(cacheKey, {
+      data: businessHours,
+      timestamp: Date.now()
     });
 
-    if (isHoliday) return false;
-
-    // Check for special hours
-    const specialHour = config.specialHours.find(sh => 
-      moment(sh.date).format('YYYY-MM-DD') === currentDate
-    );
-
-    if (specialHour) {
-      if (specialHour.isClosed) return false;
-      return currentTime >= specialHour.hours.start && currentTime <= specialHour.hours.end;
-    }
-
-    // Check regular business hours
-    if (!config.workingDays.includes(currentDay)) return false;
-
-    return currentTime >= config.workingHours.start && currentTime <= config.workingHours.end;
+    return businessHours;
   }
 
-  // Get next business hour
+  /**
+   * Get current EST time
+   */
+  getCurrentESTTime() {
+    return moment().tz('America/New_York').format('YYYY-MM-DD HH:mm:ss z');
+  }
+
+  /**
+   * Check if current time is within business hours
+   */
+  async isWithinBusinessHours() {
+    try {
+      const businessHours = await this.getCachedBusinessHours();
+      if (!businessHours) return false;
+      return businessHours.isCurrentlyOpen();
+    } catch (error) {
+      console.error('Error checking business hours:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Get next business hour
+   */
   async getNextBusinessHour() {
-    const config = await this.getBusinessHoursConfig();
-    if (!config) return 'Contact support for assistance';
+    try {
+      const businessHours = await this.getCachedBusinessHours();
+      if (!businessHours) return 'Unknown - Please contact support';
+      return businessHours.getNextAvailableTime();
+    } catch (error) {
+      console.error('Error getting next business hour:', error);
+      return 'Unknown - Please contact support';
+    }
+  }
 
-    let nextTime = moment().tz(config.timezone);
+  /**
+   * Check if we're near closing time
+   */
+  async isNearClosing() {
+    try {
+      const businessHours = await this.getCachedBusinessHours();
+      if (!businessHours) return false;
+      return businessHours.isNearClosing();
+    } catch (error) {
+      console.error('Error checking near closing:', error);
+      return false;
+    }
+  }
 
-    // Look ahead up to 14 days
-    for (let i = 0; i < 14; i++) {
-      const checkDate = nextTime.clone().add(i, 'days');
-      const dayName = checkDate.format('dddd').toLowerCase();
-      const dateStr = checkDate.format('YYYY-MM-DD');
+  /**
+   * Check if new chats are allowed
+   */
+  async allowNewChats() {
+    try {
+      const businessHours = await this.getCachedBusinessHours();
+      if (!businessHours) return true; // Default to allow if no config
+      return businessHours.allowNewChats();
+    } catch (error) {
+      console.error('Error checking allow new chats:', error);
+      return true;
+    }
+  }
 
+  /**
+   * Get minutes until closing
+   */
+  async getMinutesUntilClosing() {
+    try {
+      const businessHours = await this.getCachedBusinessHours();
+      if (!businessHours || !businessHours.isCurrentlyOpen()) return 0;
+
+      const moment = require('moment-timezone');
+      const now = moment().tz(businessHours.timezone);
+      const currentDate = now.format('YYYY-MM-DD');
+      
+      // Check for special hours first
+      const specialHour = businessHours.specialHours.find(sh => 
+        moment(sh.date).format('YYYY-MM-DD') === currentDate
+      );
+      
+      let endHour, endMinute;
+      if (specialHour && !specialHour.isClosed && specialHour.hours && specialHour.hours.end) {
+        [endHour, endMinute] = specialHour.hours.end.split(':');
+      } else {
+        [endHour, endMinute] = businessHours.workingHours.end.split(':');
+      }
+      
+      const closingTime = now.clone().hour(parseInt(endHour)).minute(parseInt(endMinute));
+      return Math.max(0, closingTime.diff(now, 'minutes'));
+    } catch (error) {
+      console.error('Error getting minutes until closing:', error);
+      return 0;
+    }
+  }
+
+  /**
+   * Check if a specific date/time is within business hours
+   */
+  async isDateTimeWithinBusinessHours(dateTime) {
+    try {
+      const businessHours = await this.getCachedBusinessHours();
+      if (!businessHours) return false;
+
+      const moment = require('moment-timezone');
+      const checkTime = moment(dateTime).tz(businessHours.timezone);
+      const currentTime = checkTime.format('HH:mm');
+      const currentDay = checkTime.format('dddd').toLowerCase();
+      const currentDate = checkTime.format('YYYY-MM-DD');
+      
       // Check if it's a holiday
-      const isHoliday = config.holidays.some(holiday => {
+      const isHoliday = businessHours.holidays.some(holiday => {
         if (holiday.recurring) {
           const holidayDate = moment(holiday.date);
-          return checkDate.format('MM-DD') === holidayDate.format('MM-DD');
+          return checkTime.format('MM-DD') === holidayDate.format('MM-DD');
         }
-        return moment(holiday.date).format('YYYY-MM-DD') === dateStr;
+        return moment(holiday.date).format('YYYY-MM-DD') === currentDate;
       });
-
-      if (isHoliday) continue;
-
+      
+      if (isHoliday) return false;
+      
       // Check for special hours
-      const specialHour = config.specialHours.find(sh => 
-        moment(sh.date).format('YYYY-MM-DD') === dateStr
+      const specialHour = businessHours.specialHours.find(sh => 
+        moment(sh.date).format('YYYY-MM-DD') === currentDate
       );
-
-      if (specialHour && !specialHour.isClosed) {
-        const [startHour, startMinute] = specialHour.hours.start.split(':');
-        return checkDate.hour(parseInt(startHour))
-                      .minute(parseInt(startMinute))
-                      .format('dddd, MMMM Do YYYY, h:mm A z');
+      
+      if (specialHour) {
+        if (specialHour.isClosed) return false;
+        if (!specialHour.hours || !specialHour.hours.start || !specialHour.hours.end) return false;
+        return currentTime >= specialHour.hours.start && currentTime <= specialHour.hours.end;
       }
-
-      // Check regular working days
-      if (config.workingDays.includes(dayName)) {
-        const [startHour, startMinute] = config.workingHours.start.split(':');
-        
-        // If it's today and we're already past opening time, try tomorrow
-        if (i === 0) {
-          const now = moment().tz(config.timezone);
-          const openingTime = now.clone().hour(parseInt(startHour)).minute(parseInt(startMinute));
-          if (now.isAfter(openingTime)) continue;
-        }
-        
-        return checkDate.hour(parseInt(startHour))
-                      .minute(parseInt(startMinute))
-                      .format('dddd, MMMM Do YYYY, h:mm A z');
-      }
+      
+      // Check regular business hours
+      if (!businessHours.workingDays.includes(currentDay)) return false;
+      
+      return currentTime >= businessHours.workingHours.start && currentTime <= businessHours.workingHours.end;
+    } catch (error) {
+      console.error('Error checking specific date time:', error);
+      return false;
     }
-
-    return 'Please contact support for assistance';
   }
 
-  // Get current EST time formatted
-  getCurrentESTTime() {
-    return moment().tz('America/New_York').format('h:mm A z on dddd, MMMM Do YYYY');
-  }
-
-  // Check if we're close to closing time
-  async isNearClosing() {
-    const config = await this.getBusinessHoursConfig();
-    if (!config || !await this.isWithinBusinessHours()) return false;
-
-    const now = moment().tz(config.timezone);
-    const [endHour, endMinute] = config.workingHours.end.split(':');
-    const closingTime = now.clone().hour(parseInt(endHour)).minute(parseInt(endMinute));
-    const warningTime = closingTime.clone().subtract(config.settings.warningMinutesBeforeClose || 30, 'minutes');
-
-    return now.isAfter(warningTime);
-  }
-
-  // Check if new chats should be allowed
-  async allowNewChats() {
-    const config = await this.getBusinessHoursConfig();
-    if (!config || !await this.isWithinBusinessHours()) return false;
-
-    const now = moment().tz(config.timezone);
-    const [endHour, endMinute] = config.workingHours.end.split(':');
-    const closingTime = now.clone().hour(parseInt(endHour)).minute(parseInt(endMinute));
-    const cutoffTime = closingTime.clone().subtract(config.settings.allowNewChatsMinutesBeforeClose || 15, 'minutes');
-
-    return now.isBefore(cutoffTime);
-  }
-
-  // Get minutes until closing
-  async getMinutesUntilClosing() {
-    const config = await this.getBusinessHoursConfig();
-    if (!config || !await this.isWithinBusinessHours()) return 0;
-
-    const now = moment().tz(config.timezone);
-    const [endHour, endMinute] = config.workingHours.end.split(':');
-    const closingTime = now.clone().hour(parseInt(endHour)).minute(parseInt(endMinute));
-
-    return closingTime.diff(now, 'minutes');
-  }
-
-  // Get outside hours message with personalization
-  async getOutsideHoursMessage(userInfo = {}) {
-    const config = await this.getBusinessHoursConfig();
-    if (!config) return "We're currently unavailable. Please try again later.";
-
-    const currentTime = this.getCurrentESTTime();
-    const nextAvailable = await this.getNextBusinessHour();
-    const firstName = userInfo.firstName || 'there';
-
-    // Get appropriate message based on time
-    const now = moment().tz(config.timezone);
-    const dayName = now.format('dddd').toLowerCase();
-    let message = config.outsideHoursMessage;
-
-    // Use weekend message if it's weekend
-    if (!config.workingDays.includes(dayName) && config.settings.weekendMessage) {
-      message = config.settings.weekendMessage;
-    }
-
-    // Use holiday message if it's a holiday
-    const currentDate = now.format('YYYY-MM-DD');
-    const isHoliday = config.holidays.some(holiday => {
-      if (holiday.recurring) {
-        const holidayDate = moment(holiday.date);
-        return now.format('MM-DD') === holidayDate.format('MM-DD');
-      }
-      return moment(holiday.date).format('YYYY-MM-DD') === currentDate;
-    });
-
-    if (isHoliday && config.settings.holidayMessage) {
-      message = config.settings.holidayMessage;
-    }
-
-    // Replace variables in message
-    return message
-      .replace(/{firstName}/g, firstName)
-      .replace(/{currentTime}/g, currentTime)
-      .replace(/{nextAvailable}/g, nextAvailable)
-      .replace(/{businessHours}/g, this.getFormattedBusinessHours(config));
-  }
-
-  // Get formatted business hours string
-  getFormattedBusinessHours(config) {
+  /**
+   * Get formatted business hours
+   */
+  getFormattedBusinessHours(businessHours) {
+    if (!businessHours) return 'Not configured';
+    
     const formatTime = (time) => {
       const [hours, minutes] = time.split(':');
       const hour = parseInt(hours);
@@ -231,91 +190,184 @@ class BusinessHoursUtil {
       return `${displayHour}:${minutes} ${ampm}`;
     };
 
-    const start = formatTime(config.workingHours.start);
-    const end = formatTime(config.workingHours.end);
-    const days = config.workingDays.map(day => 
-      day.charAt(0).toUpperCase() + day.slice(1)
-    ).join(', ');
-
-    return `${start} - ${end} EST, ${days}`;
+    return {
+      start: formatTime(businessHours.workingHours.start),
+      end: formatTime(businessHours.workingHours.end),
+      formatted: `${formatTime(businessHours.workingHours.start)} - ${formatTime(businessHours.workingHours.end)} ${businessHours.timezone}`
+    };
   }
 
-  // Clear cache (useful for testing or when config changes)
-  clearCache() {
-    this.cachedConfig = null;
-    this.cacheExpiry = null;
+  /**
+   * Get outside hours message with user context
+   */
+  async getOutsideHoursMessage(user = {}) {
+    try {
+      const businessHours = await this.getCachedBusinessHours();
+      if (!businessHours) return 'We are currently unavailable.';
+
+      const moment = require('moment-timezone');
+      const now = moment().tz(businessHours.timezone);
+      
+      // Check if it's a holiday
+      const isHoliday = businessHours.holidays.some(holiday => {
+        if (holiday.recurring) {
+          const holidayDate = moment(holiday.date);
+          return now.format('MM-DD') === holidayDate.format('MM-DD');
+        }
+        return moment(holiday.date).format('YYYY-MM-DD') === now.format('YYYY-MM-DD');
+      });
+
+      if (isHoliday) {
+        return businessHours.settings?.holidayMessage || "We're currently closed for the holiday. We'll be back during our regular business hours.";
+      }
+
+      // Check if it's weekend
+      if (now.day() === 0 || now.day() === 6) {
+        return businessHours.settings?.weekendMessage || "We're currently closed for the weekend. Our business hours are Monday through Friday.";
+      }
+
+      return businessHours.outsideHoursMessage;
+    } catch (error) {
+      console.error('Error getting outside hours message:', error);
+      return 'We are currently unavailable.';
+    }
   }
 
-  // Validate business hours configuration
+  /**
+   * Validate business hours configuration
+   */
   validateConfig(config) {
     const errors = [];
 
+    // Check required fields
     if (!config.timezone) {
       errors.push('Timezone is required');
     }
 
-    if (!config.workingHours.start || !config.workingHours.end) {
+    if (!config.workingHours || !config.workingHours.start || !config.workingHours.end) {
       errors.push('Working hours start and end times are required');
     }
 
-    if (config.workingHours.start >= config.workingHours.end) {
-      errors.push('Start time must be before end time');
+    if (!config.workingDays || !Array.isArray(config.workingDays) || config.workingDays.length === 0) {
+      errors.push('At least one working day must be specified');
     }
 
-    if (!config.workingDays || config.workingDays.length === 0) {
-      errors.push('At least one working day must be specified');
+    // Validate time format
+    const timeRegex = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/;
+    if (config.workingHours) {
+      if (config.workingHours.start && !timeRegex.test(config.workingHours.start)) {
+        errors.push('Start time must be in HH:MM format');
+      }
+
+      if (config.workingHours.end && !timeRegex.test(config.workingHours.end)) {
+        errors.push('End time must be in HH:MM format');
+      }
+
+      // Check if start time is before end time
+      if (config.workingHours.start && config.workingHours.end) {
+        if (config.workingHours.start >= config.workingHours.end) {
+          errors.push('Start time must be before end time');
+        }
+      }
+    }
+
+    // Validate working days
+    const validDays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+    if (config.workingDays && Array.isArray(config.workingDays)) {
+      const invalidDays = config.workingDays.filter(day => !validDays.includes(day.toLowerCase()));
+      if (invalidDays.length > 0) {
+        errors.push(`Invalid working days: ${invalidDays.join(', ')}`);
+      }
+    }
+
+    // Validate timezone
+    if (config.timezone) {
+      try {
+        moment().tz(config.timezone);
+      } catch (error) {
+        errors.push('Invalid timezone specified');
+      }
     }
 
     return errors;
   }
 
-  // Check if a specific date/time is within business hours
-  async isDateTimeWithinBusinessHours(dateTime) {
-    const config = await this.getBusinessHoursConfig();
-    if (!config) return false;
-
-    const checkTime = moment(dateTime).tz(config.timezone);
-    const currentTime = checkTime.format('HH:mm');
-    const currentDay = checkTime.format('dddd').toLowerCase();
-    const currentDate = checkTime.format('YYYY-MM-DD');
-
-    // Check if it's a holiday
-    const isHoliday = config.holidays.some(holiday => {
-      if (holiday.recurring) {
-        const holidayDate = moment(holiday.date);
-        return checkTime.format('MM-DD') === holidayDate.format('MM-DD');
+  /**
+   * Get business hours status with detailed information
+   */
+  async getDetailedStatus() {
+    try {
+      const businessHours = await this.getCachedBusinessHours();
+      
+      if (!businessHours) {
+        return {
+          isOpen: false,
+          isConfigured: false,
+          message: 'Business hours not configured',
+          nextAvailable: null,
+          currentTime: this.getCurrentESTTime(),
+          timezone: 'America/New_York'
+        };
       }
-      return moment(holiday.date).format('YYYY-MM-DD') === currentDate;
-    });
 
-    if (isHoliday) return false;
+      const isOpen = await this.isWithinBusinessHours();
+      const isNearClosing = await this.isNearClosing();
+      const allowNewChats = await this.allowNewChats();
+      const nextAvailable = !isOpen ? await this.getNextBusinessHour() : null;
+      const minutesUntilClosing = isOpen ? await this.getMinutesUntilClosing() : 0;
 
-    // Check for special hours
-    const specialHour = config.specialHours.find(sh => 
-      moment(sh.date).format('YYYY-MM-DD') === currentDate
-    );
-
-    if (specialHour) {
-      if (specialHour.isClosed) return false;
-      return currentTime >= specialHour.hours.start && currentTime <= specialHour.hours.end;
+      return {
+        isOpen,
+        isNearClosing,
+        allowNewChats,
+        minutesUntilClosing,
+        nextAvailable,
+        currentTime: this.getCurrentESTTime(),
+        timezone: businessHours.timezone,
+        workingHours: this.getFormattedBusinessHours(businessHours),
+        isConfigured: true
+      };
+    } catch (error) {
+      console.error('Error getting detailed status:', error);
+      return {
+        isOpen: false,
+        isConfigured: false,
+        message: 'Error checking business hours',
+        currentTime: this.getCurrentESTTime()
+      };
     }
-
-    // Check regular business hours
-    if (!config.workingDays.includes(currentDay)) return false;
-
-    return currentTime >= config.workingHours.start && currentTime <= config.workingHours.end;
   }
 }
 
-// Create singleton instance
+// Create a singleton instance
 const businessHoursUtil = new BusinessHoursUtil();
+
+// Middleware function for Express routes
+const businessHoursMiddleware = async (req, res, next) => {
+  try {
+    const businessHours = await BusinessHours.getActive();
+    
+    req.businessHours = businessHours;
+    req.businessHoursStatus = await businessHoursUtil.getDetailedStatus();
+    req.isBusinessHours = req.businessHoursStatus.isOpen;
+    req.canStartChat = { 
+      allowed: req.businessHoursStatus.allowNewChats, 
+      reason: req.businessHoursStatus.isOpen ? 'within_hours' : 'outside_hours' 
+    };
+    
+    next();
+  } catch (error) {
+    console.error('Business hours middleware error:', error);
+    req.businessHours = null;
+    req.businessHoursStatus = { isOpen: false, isConfigured: false };
+    req.isBusinessHours = false;
+    req.canStartChat = { allowed: true, reason: 'no_restrictions' };
+    
+    next();
+  }
+};
 
 module.exports = {
   businessHoursUtil,
-  isWithinBusinessHours: () => businessHoursUtil.isWithinBusinessHours(),
-  getNextBusinessHour: () => businessHoursUtil.getNextBusinessHour(),
-  getCurrentESTTime: () => businessHoursUtil.getCurrentESTTime(),
-  getOutsideHoursMessage: (userInfo) => businessHoursUtil.getOutsideHoursMessage(userInfo),
-  isNearClosing: () => businessHoursUtil.isNearClosing(),
-  allowNewChats: () => businessHoursUtil.allowNewChats()
+  businessHoursMiddleware
 };

@@ -81,6 +81,8 @@ const TestAdminSubscribers = lazy(() => import('./Pages/Admin/Subscribers/TestAd
 const ManageAdminTestWorkAuthorizations = lazy(() => import('./Pages/Admin/WorkAuthorizations/ManageAdminTestWorkAuthorizations'));
 const AddTestWorkAuthorization = lazy(() => import('./Pages/Admin/WorkAuthorizations/AddTestWorkAuthorization'));
 const AdminTestChangePassword = lazy(() => import('./Pages/Admin/Account/AdminTestChangePassword'));
+const ManageBusinessHours = lazy(() => import('./Pages/Admin/BusinessHours/ManageBusinessHours'));
+
 // *****************************************************************************************
 
 const EmailVerification = lazy(() => import('./Pages/EmailConfirmation/PageEmailVerification'));
@@ -258,6 +260,8 @@ function App() {
             <Route path="/Admin/Add-Work-Authorization" element={<AddTestWorkAuthorization />} />
             <Route path="/Admin/Manage-Work-Authorizations" element={<ManageAdminTestWorkAuthorizations />} />
             <Route path="/Admin/Change-Password" element={<AdminTestChangePassword />} />
+            
+            <Route path="/Admin/Manage-Business-Hours" element={<ManageBusinessHours />} />
             {/* ##################################################################### */}
           </Route>
 

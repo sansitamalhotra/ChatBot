@@ -230,10 +230,12 @@ app.use("/api/v1/contact", require("./routes/contactRoutes"));
 app.use("/api/v1/applicant", require("./routes/applicantRoute"));
 app.use("/api/v1/resume", require("./routes/resumeRoutes"));
 app.use("/api/v1/subscribers", require("./routes/subscribeRoutes"));
-app.use('/api/v1/liveAgent', require('./routes/liveAgentRoutes'));
+// app.use('/api/v1/liveAgent', require('./routes/liveAgentRoutes'));
 // app.use('/api/v1/chats', require('./routes/chatRoutes'));
 app.use("/api/v1/users", require("./routes/userRoutes"));
 app.use("/api/v1/photo", require("./routes/uploadUserPhotoRoutes"));
+
+app.use("/api/v1/businessHours", require("./routes/businessHoursRoutes"));
 
 // NOW serve frontend static files AFTER API routes are defined
 app.use(express.static(staticPaths.frontend));
