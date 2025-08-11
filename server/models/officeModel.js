@@ -15,6 +15,10 @@ const officeSchema = new mongoose.Schema({
   businessHours: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'BusinessHours',
+<<<<<<< HEAD
+=======
+    ref: 'BusinessHours',
+>>>>>>> b25c96b (feat:)
     required: false // Optional for now
   }
 });

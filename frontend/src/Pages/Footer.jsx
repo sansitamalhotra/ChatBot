@@ -16,7 +16,6 @@ import './Footer.css';
 const Footer = () => {
   const currentDay = new Date();
   const currentYear = currentDay.getFullYear();
-  let officeIndex = 0; // To display offices in the
 
   // ***************************************
   const [auth, setAuth] = useAuth();
@@ -45,140 +44,14 @@ const Footer = () => {
       theme: "light"
     });
 
-  const fetchRegUserById = async () => {
-    try {
-      const { data } = await API.get(`/users/fetchRegUserById/${params._id}`);
-      setUser(data.user);
-    } catch (error) {
-      console.log(error);
-    }
-  };
-
-  useEffect(() => {
-    const fetchOffices = async () => {
+    const fetchRegUserById = async () => {
       try {
-        setLoadingOffices(true);
-        const response = await API.get("/api/v1/offices/fetchAllOffices");
-        if (response.data.success) {
-          setOffices(response.data.offices);
-          // Calculate office statuses
-          updateOfficeStatuses(response.data.offices);
-        }
+        const { data } = await API.get(`/users/fetchRegUserById/${params._id}`);
+        setUser(data.user);
       } catch (error) {
-        console.error("Error fetching offices:", error);
-      } finally {
-        setLoadingOffices(false);
+        console.log(error);
       }
     };
-
-    fetchOffices();
-
-    // Update office statuses every minute
-    const interval = setInterval(() => {
-      if (offices.length > 0) {
-        updateOfficeStatuses(offices);
-      }
-    }, 60000);
-
-    return () => clearInterval(interval);
-  }, []);
-
-  // Helper function to check if office is currently open
-  const isOfficeOpen = (businessHours) => {
-    if (!businessHours) return false;
-
-    try {
-      const now = new Date();
-      const officeTime = new Intl.DateTimeFormat('en-US', {
-        timeZone: businessHours.timezone,
-        weekday: 'long',
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: false
-      }).formatToParts(now);
-
-      const currentDay = officeTime.find(part => part.type === 'weekday').value.toLowerCase();
-      const currentHour = parseInt(officeTime.find(part => part.type === 'hour').value);
-      const currentMinute = parseInt(officeTime.find(part => part.type === 'minute').value);
-      const currentTime = currentHour * 60 + currentMinute; // Convert to minutes
-
-      // Check if current day is in working days
-      if (!businessHours.workingDays?.includes(currentDay)) {
-        return false;
-      }
-
-      // Check for holidays
-      const today = now.toISOString().split('T')[0]; // YYYY-MM-DD format
-      if (businessHours.holidays?.some(holiday => holiday.date === today)) {
-        return false;
-      }
-
-      // Parse working hours
-      const [startHour, startMin] = businessHours.workingHours.start.split(':').map(Number);
-      const [endHour, endMin] = businessHours.workingHours.end.split(':').map(Number);
-      const startTime = startHour * 60 + startMin;
-      const endTime = endHour * 60 + endMin;
-
-      return currentTime >= startTime && currentTime <= endTime;
-    } catch (error) {
-      console.error('Error checking office hours:', error);
-      return false;
-    }
-  };
-
-  // Helper function to get current time in office timezone
-  const getCurrentOfficeTime = (timezone) => {
-    try {
-      return new Intl.DateTimeFormat('en-US', {
-        timeZone: timezone,
-        hour: 'numeric',
-        minute: '2-digit',
-        hour12: true
-      }).format(new Date());
-    } catch (error) {
-      return 'Time unavailable';
-    }
-  };
-
-  // Helper function to format working days
-  const formatWorkingDays = (workingDays) => {
-    if (!workingDays || workingDays.length === 0) return 'Hours not available';
-
-    const dayMap = {
-      monday: 'Mon', tuesday: 'Tue', wednesday: 'Wed',
-      thursday: 'Thu', friday: 'Fri', saturday: 'Sat', sunday: 'Sun'
-    };
-
-    if (workingDays.length === 5 &&
-      workingDays.includes('monday') &&
-      workingDays.includes('friday') &&
-      !workingDays.includes('saturday') &&
-      !workingDays.includes('sunday')) {
-      return 'Mon - Fri';
-    } else if (workingDays.length === 6 && !workingDays.includes('sunday')) {
-      return 'Mon - Sat';
-    } else if (workingDays.length === 7) {
-      return 'Mon - Sun';
-    } else {
-      return workingDays.map(day => dayMap[day] || day).join(', ');
-    }
-  };
-
-  // Update office statuses
-  const updateOfficeStatuses = (officesData) => {
-    const statuses = {};
-    officesData.forEach(office => {
-      if (office.businessHours) {
-        statuses[office._id] = {
-          isOpen: isOfficeOpen(office.businessHours),
-          currentTime: getCurrentOfficeTime(office.businessHours.timezone),
-          formattedHours: office.businessHours.formattedHours ||
-            `${office.businessHours.workingHours?.start || '9:00'} - ${office.businessHours.workingHours?.end || '17:00'}`
-        };
-      }
-    });
-    setOfficeStatuses(statuses);
-  };
 
   // initial Registered User Details
   useEffect(() => {
@@ -212,86 +85,52 @@ const Footer = () => {
               </ul>
             </div>
 
-            <div className="footer-column">
-              <h3>EDUCATION SOLUTIONS</h3>
-              <ul>
-                <li><Link to="/Education-Recruitment">Education Recruitment</Link></li>
-                {/* <li><Link to="/#">Register</Link></li> */}
-                {/* ******************************************* */}
-                {!auth.user ? (
+          <div className="footer-column">
+            <h3>EDUCATION SOLUTIONS</h3>
+            <ul>
+              <li><Link to="/Education-Recruitment">Education Recruitment</Link></li>
+              {/* <li><Link to="/#">Register</Link></li> */}
+              {/* ******************************************* */}
+              {!auth.user ? (
+              <>
+                <li><Link to="/Register">Register</Link></li>
+              </>
+              ) : (
+              <>
+                {auth.user?.role === 1 ? (
                   <>
-                    <li><Link to="/Register">Register</Link></li>
+                  <li>
+                    <Link to="/Admin/Dashboard" onClick={() => {window.location.href = "/Admin/Dashboard";}}>
+                      Admin Dashboard
+                    </Link>
+                  </li>                  
                   </>
-                ) : (
+                  ) : (
                   <>
-                    {auth.user?.role === 1 ? (
+                  {auth.user?.role === 2 ? (
                       <>
                         <li>
-                          <Link to="/Admin/Dashboard" onClick={() => { window.location.href = "/Admin/Dashboard"; }}>
-                            Admin Dashboard
+                          <Link to="/Employer/Employer-Dashboard" onClick={() => {window.location.href = "/Employer/Employer-Dashboard";}}>
+                            Employer Dashboard
                           </Link>
-                        </li>
+                        </li>  
                       </>
-                    ) : (
+                      ) : (
                       <>
-                        {auth.user?.role === 2 ? (
-                          <>
-                            <li>
-                              <Link to="/Employer/Employer-Dashboard" onClick={() => { window.location.href = "/Employer/Employer-Dashboard"; }}>
-                                Employer Dashboard
-                              </Link>
-                            </li>
-                          </>
-                        ) : (
-                          <>
-                            <li>
-                              <Link to="/Applicant-Profile-Dashboard" onClick={() => { window.location.href = "/Applicant-Profile-Dashboard"; }}>
-                                Applicant Dashboard
-                              </Link>
-                            </li>
-                          </>
-                        )}
+                        <li>
+                          <Link to="/Applicant-Profile-Dashboard" onClick={() => {window.location.href = "/Applicant-Profile-Dashboard";}}>
+                            Applicant Dashboard
+                          </Link>
+                        </li>  
                       </>
                     )}
                   </>
                 )}
-                {/* ******************************************* */}
-              </ul>
-
-              {/* Office Hours Section - First Office */}
-              <div className="office-hours-horizontal">
-                <h3>OFFICE HOURS</h3>
-                {loadingOffices && offices.length > 0 ? (
-                  <div className="loading-offices">
-                    <p>Loading office information...</p>
-                  </div>
-                ) : offices.length > 0 ? (
-                  <div className="office-horizontal-item">
-                    <div className="office-horizontal-header">
-                      <h4>{offices[0]?.location.city.toUpperCase()}, {offices[0]?.location.country.toUpperCase()}</h4>
-                      {offices[0]?.businessHours && (
-                        <span className={`footer-status-badge ${officeStatuses[offices[0]?._id]?.isOpen ? 'open' : 'closed'}`}>
-                          {officeStatuses[offices[0]?._id]?.isOpen ? 'OPEN' : 'CLOSED'}
-                        </span>
-                      )}
-                    </div>
-                    {offices[0]?.businessHours ? (
-                      <div className="office-horizontal-details">
-                        <p><strong>Hours:</strong> {formatWorkingDays(offices[0].businessHours.workingDays)}, {offices[0].businessHours.formattedHours || `${offices[0].businessHours.workingHours?.start || '9:00 AM'} - ${offices[0].businessHours.workingHours?.end || '5:30 PM'}`}</p>
-                        <p><strong>Current Time:</strong> {officeStatuses[offices[0]?._id]?.currentTime}</p>
-                        <p><strong>Timezone:</strong> {offices[0].businessHours?.timezone ? offices[0].businessHours.timezone : 'No timezone specified'}</p>
-                      </div>
-                    ) : (
-                      <p className="no-hours">Business hours not available</p>
-                    )}
-                  </div>
-                ) : (
-                  <div className="no-offices">
-                    <p>No office information available.</p>
-                  </div>
-                )}
-              </div>
-            </div>
+              </>
+              )}  
+              {/* ******************************************* */}
+            </ul>
+          </div>
 
             <div className="footer-column">
               <h3>FOR JOB SEEKERS</h3>
@@ -323,131 +162,71 @@ const Footer = () => {
                     </>
                   )}
                 </li>
-                {/* <li><Link to="/#">Login</Link></li> */}
-                {/* ******************************************* */}
-                {!auth.user ? (
+              {/* <li><Link to="/#">Login</Link></li> */}
+              {/* ******************************************* */}
+              {!auth.user ? (
+              <>
+                <li><Link to="/#">Login</Link></li>
+              </>
+              ) : (
+              <>
+                {auth.user?.role === 1 ? (
                   <>
-                    <li><Link to="/#">Login</Link></li>
+                  <li>
+                    <LogoutLink onClick={() => {window.location.href = "/Login";}}>
+                      Logout
+                    </LogoutLink>
+                  </li>                  
                   </>
-                ) : (
+                  ) : (
                   <>
-                    {auth.user?.role === 1 ? (
+                  {auth.user?.role === 2 ? (
                       <>
                         <li>
-                          <LogoutLink onClick={() => { window.location.href = "/Login"; }}>
+                          <LogoutLink onClick={() => {window.location.href = "/Login";}}>
                             Logout
                           </LogoutLink>
-                        </li>
+                        </li>  
                       </>
-                    ) : (
+                      ) : (
                       <>
-                        {auth.user?.role === 2 ? (
-                          <>
-                            <li>
-                              <LogoutLink onClick={() => { window.location.href = "/Login"; }}>
-                                Logout
-                              </LogoutLink>
-                            </li>
-                          </>
-                        ) : (
-                          <>
-                            <li>
-                              <LogoutLink onClick={() => { window.location.href = "/Login"; }}>
-                                Logout
-                              </LogoutLink>
-                            </li>
-                          </>
-                        )}
+                        <li>
+                          <LogoutLink onClick={() => {window.location.href = "/Login";}}>
+                            Logout
+                          </LogoutLink>
+                        </li>  
                       </>
                     )}
                   </>
                 )}
-                {/* ******************************************* */}
-              </ul>
-
-              {/* Second Office */}
-              {offices.length > 1 && (
-                <div className="office-hours-horizontal continuation">
-                  <div className="office-horizontal-item">
-                    <div className="office-horizontal-header">
-                      <h4>{offices[1]?.location.city.toUpperCase()}, {offices[1]?.location.country.toUpperCase()}</h4>
-                      {offices[1]?.businessHours && (
-                        <span className={`footer-status-badge ${officeStatuses[offices[1]?._id]?.isOpen ? 'open' : 'closed'}`}>
-                          {officeStatuses[offices[1]?._id]?.isOpen ? 'OPEN' : 'CLOSED'}
-                        </span>
-                      )}
-                    </div>
-                    {offices[1]?.businessHours ? (
-                      <div className="office-horizontal-details">
-                        <p><strong>Hours:</strong> {formatWorkingDays(offices[1].businessHours.workingDays)}, {offices[1].businessHours.formattedHours || `${offices[1].businessHours.workingHours?.start || '8:30 AM'} - ${offices[1].businessHours.workingHours?.end || '7:00 PM'}`}</p>
-                        <p><strong>Current Time:</strong> {officeStatuses[offices[1]?._id]?.currentTime}</p>
-                        <p><strong>Timezone:</strong> {offices[1].businessHours.timezone?.includes('Asia') ? 'Asia/Kolkata' : offices[1].businessHours.timezone}</p>
-                      </div>
-                    ) : (
-                      <p className="no-hours">Business hours not available</p>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <div className="footer-column">
-              <h3>HEALTH SOLUTIONS</h3>
-              <ul>
-                <li><Link to="/Behavioral-Health-Solutions">Behavioral Health</Link></li>
-                <li><Link to="/Health-Billing-&-Collections-Solutions">Heath & Billing Collections</Link></li>
-                <li><Link to="#">HealthCare Mergers & Acquisitions</Link></li>
-                <li>
-                  <Link to="/Behavioral-Health-Credentialing-&-Contracting">Behavioral Health Credentialing & Contracting</Link>
-                </li>
-              </ul>
-
-              {/* Third Office - Leander */}
-              {offices.length > 2 && (
-                <div className="office-hours-horizontal continuation">
-                  <div className="office-horizontal-item">
-                    <div className="office-horizontal-header">
-                      <h4>{offices[2]?.location.city.toUpperCase()}, {offices[2]?.location.country.toUpperCase()}</h4>
-                      {offices[2]?.businessHours && (
-                        <span className={`footer-status-badge ${officeStatuses[offices[2]?._id]?.isOpen ? 'open' : 'closed'}`}>
-                          {officeStatuses[offices[2]?._id]?.isOpen ? 'OPEN' : 'CLOSED'}
-                        </span>
-                      )}
-                    </div>
-                    {offices[1]?.businessHours ? (
-                      <div className="office-horizontal-details">
-                        <p><strong>Hours:</strong> {formatWorkingDays(offices[2].businessHours.workingDays)}, {offices[2].businessHours.formattedHours || `${offices[2].businessHours.workingHours?.start || '8:30 AM'} - ${offices[2].businessHours.workingHours?.end || '7:00 PM'}`}</p>
-                        <p><strong>Current Time:</strong> {officeStatuses[offices[2]?._id]?.currentTime}</p>
-                        <p><strong>Timezone:</strong> {offices[2].businessHours?.timezone ? offices[2].businessHours.timezone : 'No timezone specified'}</p>
-                      </div>
-                    ) : (
-                      <p className="no-hours">Business hours not available</p>
-                    )}
-                  </div>
-                </div>
-              )}
-              {/* <div className="office-hours-horizontal continuation">
-                <div className="office-horizontal-item">
-                  <div className="office-horizontal-header">
-                    <h4>LEANDER, US</h4>
-                  </div>
-                  <div className="office-horizontal-details">
-                    <p>Business hours not available</p>
-                  </div>
-                </div>
-              </div> */}
-            </div>
-
-            <div className="footer-column">
-              <h3>ABOUT US</h3>
-              <ul>
-                <li><Link to="/About-Us">About Us</Link></li>
-                <li><Link to="/Who-We-Are">Who We're </Link></li>
-                <li><Link to="/Our-Locations">Locations</Link></li>
-                <li><Link to="/ThinkBeyond-Privacy-Policy">Privacy Policy</Link></li>
-              </ul>
-            </div>            
+              </>
+              )}  
+              {/* ******************************************* */}
+            </ul>
           </div>
+
+          <div className="footer-column">
+            <h3>HEALTH SOLUTIONS</h3>
+            <ul>
+              <li><Link to="/Behavioral-Health-Solutions">Behavioral Health</Link></li>
+              <li><Link to="/Health-Billing-&-Collections-Solutions">Heath & Billing Collections</Link></li>
+              <li><Link to="#">HealthCare Mergers & Acquisitions</Link></li>
+              <li>
+                <Link to="/Behavioral-Health-Credentialing-&-Contracting">Behavioral Health Credentialing & Contracting</Link>
+              </li>
+            </ul>
+          </div>
+
+          <div className="footer-column">
+            <h3>ABOUT US</h3>
+            <ul>
+              <li><Link to="/About-Us">About Us</Link></li>
+              <li><Link to="/Who-We-Are">Who We're </Link></li>
+              <li><Link to="/Our-Locations">Locations</Link></li>
+              <li><Link to="/ThinkBeyond-Privacy-Policy">Privacy Policy</Link></li>
+            </ul>
+          </div>
+        </div>
 
           <div className="footer-bottom">
             <div className="social-section">
