@@ -1,5 +1,5 @@
+//server/models/activityLogModel.js
 const mongoose = require("mongoose");
-
 const activityLogSchema = new mongoose.Schema({
   userId: {
     type: mongoose.Schema.Types.ObjectId,
@@ -24,10 +24,26 @@ const activityLogSchema = new mongoose.Schema({
       'session_start',
       'session_end',
       'session_resume',
+      'session_pause',
       'tab_hidden',
       'tab_visible',
       'connection_lost',
-      'reconnected'
+      'reconnected',
+      'page_focus',
+      'page_blur',
+      'mouse_activity',
+      'keyboard_activity',
+      'manual_override',
+      'page_unload',
+      'component_unmount',
+      
+      'status_update_online',
+      'status_update_offline', 
+      'status_update_active',
+      'status_update_idle',
+      'status_update_away',
+      
+      'general'
     ],
     default: 'login'
   },
@@ -45,10 +61,9 @@ const activityLogSchema = new mongoose.Schema({
     required: true,
     default: 'unknown'
   },
-  email: { // Add email field for direct tracking
+  email: { 
     type: String,
     required: true,
-    // Removed index: true to avoid duplication
   },
   createdAt: {
     type: Date,
@@ -56,9 +71,10 @@ const activityLogSchema = new mongoose.Schema({
   }
 });
 
-// Compound indexes for efficient querying
+
 activityLogSchema.index({ userId: 1, timestamp: -1 });
 activityLogSchema.index({ sessionId: 1, timestamp: -1 });
 activityLogSchema.index({ activityType: 1, timestamp: -1 });
-activityLogSchema.index({ email: 1 });  // Keep this explicit index for email
+activityLogSchema.index({ email: 1 }); 
+
 module.exports = mongoose.model("ActivityLog", activityLogSchema);

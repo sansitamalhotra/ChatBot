@@ -65,12 +65,12 @@ const Sidebar = ({ isOpen }) => {
             </div>
         </li>
         <li className="nav-item">
-            <Link className="nav-link" data-bs-toggle="collapse" to="#admin-work-experiences" aria-expanded="false" aria-controls="admin-work-experiences">
+            <Link className="nav-link" data-bs-toggle="collapse" to="#admin-business-hours" aria-expanded="false" aria-controls="admin-business-hours">
               <span className="menu-title">Manage Business Hrs</span>
               <i className="menu-arrow"></i>
-              <i className="mdi mdi-checkbox-multiple-marked menu-icon"></i>
+              <i className="mdi mdi-calendar-clock menu-icon"></i>
             </Link>
-            <div className="collapse" id="admin-work-experiences">
+            <div className="collapse" id="admin-business-hours">
               <ul className="nav flex-column sub-menu">
                 <li className="nav-item">
                   <Link className="nav-link" to="/Admin/Add-Business-Hour">Add Business Hour</Link>

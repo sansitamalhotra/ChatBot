@@ -104,15 +104,32 @@ const TestHomeHeader = () => {
   const fetchRegUserById = async () => {
     try {
       const { data } = await API.get(`/users/fetchRegUserById/${params._id}`);
-      setUser(data.user);
+      setUser(data.user || {}); // Fixed: Ensure user is always an object
     } catch (error) {
       console.log(error);
+      setUser({}); // Fixed: Set empty object on error
     }
   };
 
   useEffect(() => {
     if (params?._id) fetchRegUserById();
   }, [params?._id]);
+
+  // Helper function to safely check photo path - FIXED: Added null/undefined checks
+  const getProfileImageSrc = (userPhoto) => {
+    if (!userPhoto) return ''; // Return empty string if no photo
+    
+    // Safely check if photo starts with specific path
+    const isUploadPath = typeof userPhoto === 'string' && userPhoto.startsWith('/uploads/userAvatars/');
+    return isUploadPath ? process.env.REACT_APP_API_URL + userPhoto : userPhoto;
+  };
+
+  // Helper function to safely get user name - FIXED: Added null/undefined checks
+  const getUserDisplayName = (userObj) => {
+    const firstName = userObj?.firstname || userObj?.first_name || '';
+    const lastName = userObj?.lastname || userObj?.last_name || '';
+    return `${firstName} ${lastName}`.trim();
+  };
 
   // Admin menu items
   const renderAdminMenuItems = () => (
@@ -151,7 +168,7 @@ const TestHomeHeader = () => {
   );
 
   // Super Admin Menu Items
-   const renderSuperAdminMenuItems = () => (
+  const renderSuperAdminMenuItems = () => (
     <>
       <li>
         <Link to="/Super-Admin/Dashboard" onClick={() => { window.location.href = "/Super-Admin/Dashboard"; }}>
@@ -185,7 +202,6 @@ const TestHomeHeader = () => {
       </li>
     </>
   );
-
 
   const renderLogoutItem = () => (
     <li>
@@ -224,9 +240,6 @@ const TestHomeHeader = () => {
         </div>
 
         <ul className={`nav-links ${mobileMenuOpen ? 'active' : ''}`}>
-          {/* Top-level menus unchanged here */}
-          {/* ... your menus for FOR BUSINESSES, JOB SEEKERS, EMPLOYERS, ABOUT US, CONTACT US ... */}
-
           <li className={activeDropdown === 0 ? 'active' : ''}>
             <Link to="#" className="dropdown-toggle" onClick={(e) => toggleDropdown(0, e)}>
               FOR BUSINESSES
@@ -289,8 +302,8 @@ const TestHomeHeader = () => {
               </ul>
             </div>
           </li>
-          <li className={activeDropdown === 1 ? 'active' : ''}>
-            <Link to="#" className="dropdown-toggle" onClick={(e) => toggleDropdown(1, e)}>
+          <li className={activeDropdown === 2 ? 'active' : ''}>
+            <Link to="#" className="dropdown-toggle" onClick={(e) => toggleDropdown(2, e)}>
               EMPLOYERS
             </Link>
             <div className="mega-menu">
@@ -302,8 +315,8 @@ const TestHomeHeader = () => {
               </ul>
             </div>
           </li>
-          <li className={activeDropdown === 2 ? 'active' : ''}>
-            <Link to="/About-Us" className="dropdown-toggle" onClick={(e) => toggleDropdown(2, e)}>
+          <li className={activeDropdown === 3 ? 'active' : ''}>
+            <Link to="/About-Us" className="dropdown-toggle" onClick={(e) => toggleDropdown(3, e)}>
               ABOUT US
             </Link>
             <div className="mega-menu">
@@ -318,20 +331,20 @@ const TestHomeHeader = () => {
           <li><Link to="/Contact-Us" onClick={handleLinkClick}>CONTACT US</Link></li>
 
           {/* Role-Based Mobile Menus */}
-          {!auth.user ? null : (
+          {auth.user && (
             <>
               {auth.user?.role === ROLE_ADMIN && (
                 <li className="mobile-more-menu">
                   <li className={activeDropdown === 4 ? 'active' : ''} style={{ marginBottom: "100px" }}>
                     <Link to="#" className="dropdown-toggle" onClick={(e) => toggleDropdown(4, e)}>
-                      {auth.user?.firstname} {" "} {auth.user?.lastname}
+                      {getUserDisplayName(auth.user)}
                       <i className='mdi mdi-account-check ms-3 text-primary' style={{ fontSize: "25px" }}></i>
                     </Link>
                     <div className="mega-menu">
                       <h3>Admin Quick Access</h3>
                       <ul>
-                        
-                        {renderAdminMenuItems()}enderLogoutItem()}
+                        {renderAdminMenuItems()}
+                        {renderLogoutItem()}
                       </ul>
                     </div>
                   </li>
@@ -342,13 +355,13 @@ const TestHomeHeader = () => {
                 <li className="mobile-more-menu">
                   <li className={activeDropdown === 5 ? 'active' : ''} style={{ marginBottom: "100px" }}>
                     <Link to="#" className="dropdown-toggle" onClick={(e) => toggleDropdown(5, e)}>
-                      {auth.user?.firstname} {" "} {auth.user?.lastname}
+                      {getUserDisplayName(auth.user)}
                       <i className='mdi mdi-account-check ms-3 text-primary' style={{ fontSize: "25px" }}></i>
                     </Link>
                     <div className="mega-menu">
                       <h3>Super Admin Quick Access</h3>
                       <ul>
-                        {renderSuperAdminMenuItems()} {/* Super Admin Menu Items */}
+                        {renderSuperAdminMenuItems()}
                         {renderLogoutItem()}
                       </ul>
                     </div>
@@ -362,13 +375,13 @@ const TestHomeHeader = () => {
                     <Link to="#" className="dropdown-toggle" onClick={(e) => toggleDropdown(4, e)}>
                       <img
                         className="profile-image me-2"
-                        src={`${auth?.user?.photo?.startsWith('/uploads/userAvatars/') ? process.env.REACT_APP_API_URL + auth.user.photo : auth?.user?.photo || user?.photo}`}
-                        alt={`${auth?.user?.firstname} ${auth?.user?.lastname}`}
+                        src={getProfileImageSrc(auth?.user?.photo || user?.photo)}
+                        alt={getUserDisplayName(auth.user)}
                         aria-label="User profile photo"
                         role="button"
                         style={{ borderRadius: "50%", height: "35px", width: "35px" }}
                       />
-                      {auth.user?.firstname} {" "} {auth.user?.lastname}
+                      {getUserDisplayName(auth.user)}
                       <i className='mdi mdi-account-check ms-3 text-primary' style={{ fontSize: "25px" }}></i>
                     </Link>
                     <div className="mega-menu">
@@ -380,10 +393,7 @@ const TestHomeHeader = () => {
                           </Link>
                         </li>
                         <li><Link to="#" onClick={handleLinkClick}>Account</Link></li>
-                        <LogoutNavbarLink onClick={() => { window.location.href = "/Login"; }}>
-                          <i className="mdi mdi-logout me-2 text-success"></i>
-                          Logout
-                        </LogoutNavbarLink>
+                        {renderLogoutItem()}
                       </ul>
                     </div>
                   </li>
@@ -396,13 +406,13 @@ const TestHomeHeader = () => {
                     <Link to="#" className="dropdown-toggle" onClick={(e) => toggleDropdown(4, e)}>
                       <img
                         className="profile-image me-2"
-                        src={`${auth?.user?.photo?.startsWith('/uploads/userAvatars/') ? process.env.REACT_APP_API_URL + auth.user.photo : auth?.user?.photo || user?.photo}`}
-                        alt={`${auth.user.firstname} ${auth.user.lastname}`}
+                        src={getProfileImageSrc(auth?.user?.photo || user?.photo)}
+                        alt={getUserDisplayName(auth.user)}
                         aria-label="User profile photo"
                         role="button"
                         style={{ borderRadius: "50%", height: "35px", width: "35px" }}
                       />
-                      {auth.user?.firstname} {" "} {auth.user?.lastname}
+                      {getUserDisplayName(auth.user)}
                       <i className='mdi mdi-account-check ms-3 text-primary' style={{ fontSize: "25px" }}></i>
                     </Link>
                     <div className="mega-menu">
@@ -418,10 +428,7 @@ const TestHomeHeader = () => {
                             <i className="mdi mdi-account-key menu-icon me-2 text-success"></i> Account
                           </Link>
                         </li>
-                        <LogoutNavbarLink onClick={() => { window.location.href = "/Login"; }}>
-                          <i className="mdi mdi-logout me-2 text-success"></i>
-                          Logout
-                        </LogoutNavbarLink>
+                        {renderLogoutItem()}
                       </ul>
                     </div>
                   </li>
@@ -429,7 +436,6 @@ const TestHomeHeader = () => {
               )}
             </>
           )}
-
         </ul>
 
         <div className="cta-buttons">
@@ -447,7 +453,7 @@ const TestHomeHeader = () => {
                     <li className={activeDropdown === 4 ? 'active' : ''}>
                       <Link to="#" className="dropdown-toggle" onClick={(e) => toggleDropdown(4, e)}>
                         <i className='mdi mdi-account-check me-2 text-primary' style={{ fontSize: "30px" }}></i>
-                        {auth.user?.first_name} {" "} {auth.user?.last_name}
+                        {getUserDisplayName(auth.user)}
                       </Link>
                       <div className="mega-menu">
                         <h3>Admin Quick Access</h3>
@@ -468,7 +474,7 @@ const TestHomeHeader = () => {
                     <li className={activeDropdown === 4 ? 'active' : ''}>
                       <Link to="#" className="dropdown-toggle" onClick={(e) => toggleDropdown(4, e)}>
                         <i className='mdi mdi-account-check me-2 text-primary' style={{ fontSize: "30px" }}></i>
-                        {auth.user?.first_name} {" "} {auth.user?.last_name}
+                        {getUserDisplayName(auth.user)}
                       </Link>
                       <div className="mega-menu">
                         <h3>Super Admin Quick Access</h3>
@@ -490,13 +496,13 @@ const TestHomeHeader = () => {
                       <Link to="#" className="dropdown-toggle" onClick={(e) => toggleDropdown(4, e)}>
                         <img
                           className="profile-image me-2"
-                          src={`${auth?.user?.photo?.startsWith('/uploads/userAvatars/') ? process.env.REACT_APP_API_URL + auth.user.photo : auth?.user?.photo || user?.photo}`}
-                          alt={`${auth?.user?.firstname} ${auth?.user?.lastname}`}
+                          src={getProfileImageSrc(auth?.user?.photo || user?.photo)}
+                          alt={getUserDisplayName(auth.user)}
                           aria-label="User profile photo"
                           role="button"
                           style={{ borderRadius: "50%", height: "35px", width: "35px" }}
                         />
-                        {auth.user?.firstname} {" "} {auth.user?.lastname}
+                        {getUserDisplayName(auth.user)}
                       </Link>
                       <div className="mega-menu">
                         <h3>Employer Quick Access</h3>
@@ -507,10 +513,7 @@ const TestHomeHeader = () => {
                             </Link>
                           </li>
                           <li><Link to="#" onClick={handleLinkClick}>Account</Link></li>
-                          <LogoutNavbarLink onClick={() => { window.location.href = "/Login"; }}>
-                            <i className="mdi mdi-logout me-2 text-success"></i>
-                            Logout
-                          </LogoutNavbarLink>
+                          {renderLogoutItem()}
                         </ul>
                       </div>
                     </li>
@@ -526,13 +529,13 @@ const TestHomeHeader = () => {
                       <Link to="#" className="dropdown-toggle" onClick={(e) => toggleDropdown(4, e)}>
                         <img
                           className="profile-image me-2"
-                          src={`${auth?.user?.photo?.startsWith('/uploads/userAvatars/') ? process.env.REACT_APP_API_URL + auth.user.photo : auth?.user?.photo || user?.photo}`}
-                          alt={`${auth.user.firstname} ${auth.user.lastname}`}
+                          src={getProfileImageSrc(auth?.user?.photo || user?.photo)}
+                          alt={getUserDisplayName(auth.user)}
                           aria-label="User profile photo"
                           role="button"
                           style={{ borderRadius: "50%", height: "35px", width: "35px" }}
                         />
-                        {auth.user?.firstname} {" "} {auth.user?.lastname}
+                        {getUserDisplayName(auth.user)}
                       </Link>
                       <div className="mega-menu">
                         <h3>Job Seeker Quick Access</h3>
@@ -547,10 +550,7 @@ const TestHomeHeader = () => {
                               <i className="mdi mdi-account-key menu-icon me-2 text-success"></i> Account
                             </Link>
                           </li>
-                          <LogoutNavbarLink onClick={() => { window.location.href = "/Login"; }}>
-                            <i className="mdi mdi-logout me-2 text-success"></i>
-                            Logout
-                          </LogoutNavbarLink>
+                          {renderLogoutItem()}
                         </ul>
                       </div>
                     </li>

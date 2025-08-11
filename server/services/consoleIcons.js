@@ -17,6 +17,7 @@ const consoleIcons = {
   target: 'fas fa-bullseye',    
   statistics: 'fas fa-chart-bar',
   inbox: 'fas fa-inbox',
+  calendar: 'fas fa-calendar-alt', 
   
   // User status icons
   user: 'fas fa-user',                      
@@ -68,7 +69,8 @@ const logWithIcon = {
   keyboard: (message) => console.log(`⌨️ ${message}`),
   mouse: (message) => console.log(`🖱️ ${message}`),
   pause: (message) => console.log(`⏸️ ${message}`),
-  resume: (message) => console.log(`▶️ ${message}`)
+  resume: (message) => console.log(`▶️ ${message}`),
+  calendar: (message) => console.log(`📅 ${message}`)
 };
 
 // For frontend notification systems

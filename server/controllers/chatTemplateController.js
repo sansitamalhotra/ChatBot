@@ -1,5 +1,7 @@
 //server/controllers/chatTemplateController.js
 const ChatTemplate = require('../models/chatTemplateModel');
+const chatTemplateCache = require('../services/chatchatTemplateCache');
+const { logWithIcon } = require('../services/consoleIcons');
 
 class ChatTemplateController {
   // Create new chat template
@@ -35,6 +37,8 @@ class ChatTemplateController {
       });
 
       await template.save();
+      // Clear cache so new template is visible immediately
+      chatTemplateCache.clearCache();
 
       res.status(201).json({
         success: true,
@@ -119,10 +123,8 @@ class ChatTemplateController {
     try {
       const { templateId } = req.params;
 
-      const template = await ChatTemplate.findById(templateId)
-        .populate('createdBy', 'firstname lastname email')
-        .populate('parentTemplate', 'title version');
-
+      // Try cache first
+      const template = await chatTemplateCache.getById(templateId);
       if (!template) {
         return res.status(404).json({
           success: false,
@@ -177,6 +179,9 @@ class ChatTemplateController {
         { new: true, runValidators: true }
       );
 
+      // Invalidate cache
+      chatTemplateCache.clearCache();
+
       res.json({
         success: true,
         message: 'Template updated successfully',
@@ -215,6 +220,9 @@ class ChatTemplateController {
 
       await ChatTemplate.findByIdAndDelete(templateId);
 
+      // Invalidate cache
+      chatTemplateCache.clearCache();
+
       res.json({
         success: true,
         message: 'Template deleted successfully'
@@ -235,7 +243,8 @@ class ChatTemplateController {
       const { templateId } = req.params;
       const { variables = {}, context = {} } = req.body;
 
-      const template = await ChatTemplate.findById(templateId);
+      // Use cache to fetch template object (full document)
+      const template = await chatTemplateCache.getById(templateId);
       if (!template) {
         return res.status(404).json({
           success: false,
@@ -244,7 +253,7 @@ class ChatTemplateController {
       }
 
       // Check if template should be shown based on context
-      const shouldShow = template.shouldShow(context);
+      const shouldShow = template.shouldShow ? template.shouldShow(context) : true;
       if (!shouldShow) {
         return res.status(400).json({
           success: false,
@@ -255,8 +264,11 @@ class ChatTemplateController {
       // Render the template
       const renderedContent = template.render(variables);
 
-      // Increment usage counter
+      // Increment usage counter (this modifies the template)
       await template.incrementUsage();
+
+      // Invalidate cache for this template (updated usage)
+      chatTemplateCache.clearCache();
 
       res.json({
         success: true,
@@ -288,11 +300,9 @@ class ChatTemplateController {
       const { templateType, category } = req.params;
       const { businessHoursOnly, limit = 10 } = req.query;
 
-      const templates = await ChatTemplate.findByTypeAndCategory(
-        templateType,
-        category,
-        businessHoursOnly !== undefined ? businessHoursOnly === 'true' : null
-      ).limit(parseInt(limit));
+      const businessFlag = businessHoursOnly !== undefined ? businessHoursOnly === 'true' : null;
+      // Use cache for lookup
+      const templates = await chatTemplateCache.findByTypeAndCategory(templateType, category, businessFlag);
 
       res.json({
         success: true,
@@ -330,17 +340,21 @@ class ChatTemplateController {
       }
 
       const template = templates[0];
+      // This modifies the template usage stats
       await ChatTemplate.findByIdAndUpdate(template._id, { 
         $inc: { 'usage.timesUsed': 1 },
         'usage.lastUsed': new Date()
       });
+
+      // Clear cache since template usage was updated
+      chatTemplateCache.clearCache();
 
       res.json({
         success: true,
         data: template
       });
     } catch (error) {
-      console.error('Error fetching random template:', error);
+      logWithIcon.error('Error fetching random template:', error);
       res.status(500).json({
         success: false,
         message: 'Error fetching random template',
@@ -382,13 +396,16 @@ class ChatTemplateController {
 
       await clonedTemplate.save();
 
+      // Clear cache since a new template was created
+      chatTemplateCache.clearCache();
+
       res.status(201).json({
         success: true,
         message: 'Template cloned successfully',
         data: clonedTemplate
       });
     } catch (error) {
-      console.error('Error cloning template:', error);
+      logWithIcon.error('Error cloning template:', error);
       res.status(500).json({
         success: false,
         message: 'Error cloning template',
@@ -418,7 +435,11 @@ class ChatTemplateController {
         });
       }
 
+      // This modifies the template rating
       await template.addRating(rating);
+
+      // Clear cache since template rating was updated
+      chatTemplateCache.clearCache();
 
       res.json({
         success: true,
@@ -430,7 +451,7 @@ class ChatTemplateController {
         }
       });
     } catch (error) {
-      console.error('Error rating template:', error);
+      logWithIcon.error('Error rating template:', error);
       res.status(500).json({
         success: false,
         message: 'Error rating template',
@@ -497,7 +518,7 @@ class ChatTemplateController {
         data: stats
       });
     } catch (error) {
-      console.error('Error fetching template stats:', error);
+      logWithIcon.error('Error fetching template stats:', error);
       res.status(500).json({
         success: false,
         message: 'Error fetching template statistics',
@@ -526,6 +547,9 @@ class ChatTemplateController {
 
       const defaultTemplates = await ChatTemplate.createDefaults(createdBy);
 
+      // Clear cache since new templates were created
+      chatTemplateCache.clearCache();
+
       res.status(201).json({
         success: true,
         message: 'Default templates created successfully',
@@ -535,7 +559,7 @@ class ChatTemplateController {
         }
       });
     } catch (error) {
-      console.error('Error creating default templates:', error);
+      logWithIcon.error('Error creating default templates:', error);
       res.status(500).json({
         success: false,
         message: 'Error creating default templates',
@@ -582,6 +606,9 @@ class ChatTemplateController {
         { ...updateData, updatedAt: new Date() }
       );
 
+      // Clear cache since templates were bulk updated
+      chatTemplateCache.clearCache();
+
       res.json({
         success: true,
         message: 'Templates updated successfully',
@@ -591,7 +618,7 @@ class ChatTemplateController {
         }
       });
     } catch (error) {
-      console.error('Error bulk updating templates:', error);
+      logWithIcon.error('Error bulk updating templates:', error);
       res.status(500).json({
         success: false,
         message: 'Error bulk updating templates',
@@ -650,7 +677,7 @@ class ChatTemplateController {
         }
       });
     } catch (error) {
-      console.error('Error searching templates:', error);
+      logWithIcon.error('Error searching templates:', error);
       res.status(500).json({
         success: false,
         message: 'Error searching templates',
@@ -687,7 +714,7 @@ class ChatTemplateController {
         }
       });
     } catch (error) {
-      console.error('Error fetching template categories:', error);
+      logWithIcon.error('Error fetching template categories:', error);
       res.status(500).json({
         success: false,
         message: 'Error fetching template categories',
@@ -759,7 +786,7 @@ class ChatTemplateController {
         });
       }
     } catch (error) {
-      console.error('Error exporting templates:', error);
+      logWithIcon.error('Error exporting templates:', error);
       res.status(500).json({
         success: false,
         message: 'Error exporting templates',
@@ -787,6 +814,8 @@ class ChatTemplateController {
         errors: []
       };
 
+      let hasImportedTemplates = false;
+
       for (const templateData of templates) {
         try {
           // Check if template with same title exists
@@ -809,6 +838,7 @@ class ChatTemplateController {
                 updatedAt: new Date()
               }
             );
+            hasImportedTemplates = true;
           } else {
             // Create new template
             const newTemplate = new ChatTemplate({
@@ -824,6 +854,7 @@ class ChatTemplateController {
             });
 
             await newTemplate.save();
+            hasImportedTemplates = true;
           }
 
           results.imported++;
@@ -835,13 +866,18 @@ class ChatTemplateController {
         }
       }
 
+      // Clear cache only if templates were actually imported/updated
+      if (hasImportedTemplates) {
+        chatTemplateCache.clearCache();
+      }
+
       res.status(201).json({
         success: true,
         message: 'Templates import completed',
         data: results
       });
     } catch (error) {
-      console.error('Error importing templates:', error);
+      logWithIcon.error('Error importing templates:', error);
       res.status(500).json({
         success: false,
         message: 'Error importing templates',
@@ -924,7 +960,7 @@ class ChatTemplateController {
         data: validation
       });
     } catch (error) {
-      console.error('Error validating template:', error);
+      logWithIcon.error('Error validating template:', error);
       res.status(500).json({
         success: false,
         message: 'Error validating template',
@@ -971,7 +1007,7 @@ class ChatTemplateController {
         }
       });
     } catch (error) {
-      console.error('Error previewing template:', error);
+      logWithIcon.error('Error previewing template:', error);
       res.status(500).json({
         success: false,
         message: 'Error previewing template',

@@ -1,14 +1,16 @@
-// controllers/chatSessionController.js
+//server/controllers/chatSessionController.js
 const ChatSession = require('../models/chatSessionModel');
 const ChatMessage = require('../models/chatMessageModel');
 const ChatMetrics = require('../models/chatMetricsModel');
 const LiveAgent = require('../models/liveAgentModel');
 const BusinessHours = require('../models/businessHoursModel');
+const templateCache = require('../services/chatTemplateCache');
 
 class ChatSessionController {
   // Create new chat session
   static async createChatSession(req, res) {
     try {
+      // Get incoming data first
       const { firstName, lastName, email, phone, selectedOption } = req.body;
       const userId = req.user.id;
 
@@ -50,35 +52,51 @@ class ChatSessionController {
           requestedDuringHours: businessHoursAttempt,
           servedDuringHours: businessHoursAttempt,
           outsideHoursHandling: businessHoursAttempt ? null : 'bot_only',
-          timeUntilBusinessHours: businessHours && !businessHoursAttempt ? 
+          timeUntilBusinessHours: businessHours && !businessHoursAttempt ?
             this.calculateTimeUntilBusinessHours(businessHours) : 0
         },
         sessionFlow: {
           entryPoint: req.body.entryPoint || 'widget',
-          selectedOptions: selectedOption ? [{ 
-            option: selectedOption, 
-            timestamp: new Date(), 
-            responseTime: 0 
+          selectedOptions: selectedOption ? [{
+            option: selectedOption,
+            timestamp: new Date(),
+            responseTime: 0
           }] : []
         }
       });
 
       await metrics.save();
 
-      // Create welcome message
+      // Create welcome message using greeting template if available
+      let welcomeText;
+      try {
+        const greetingTemplates = await templateCache.findByTypeAndCategory('greeting', 'greeting', null);
+        if (greetingTemplates && greetingTemplates.length > 0) {
+          const tpl = greetingTemplates[0];
+          welcomeText = tpl.render({ firstName, nextAvailable: businessHours?.getNextAvailableTime?.() });
+          // increment usage
+          if (tpl.incrementUsage) await tpl.incrementUsage();
+        } else {
+          welcomeText = this.generateWelcomeMessage(chatSession, businessHours);
+        }
+      } catch (err) {
+        console.error('Error selecting greeting template:', err);
+        welcomeText = this.generateWelcomeMessage(chatSession, businessHours);
+      }
+
       const welcomeMessage = new ChatMessage({
         sessionId: chatSession._id,
         senderId: chatSession._id, // System message
         senderModel: 'System',
         senderType: 'system',
-        message: this.generateWelcomeMessage(chatSession, businessHours),
+        message: welcomeText,
         messageType: businessHoursAttempt ? 'session_start' : 'outside_hours_notice',
         metadata: {
           businessHoursMessage: !businessHoursAttempt,
           systemData: {
             businessHours: businessHours ? {
               isOpen: businessHoursAttempt,
-              nextAvailable: businessHours.getNextAvailableTime(),
+              nextAvailable: businessHours.getNextAvailableTime && businessHours.getNextAvailableTime(),
               workingHours: businessHours.formattedHours
             } : null
           }
@@ -96,7 +114,7 @@ class ChatSessionController {
             isOpen: businessHoursAttempt,
             message: businessHours?.outsideHoursMessage,
             options: businessHours?.outsideHoursOptions,
-            nextAvailable: businessHours?.getNextAvailableTime()
+            nextAvailable: businessHours?.getNextAvailableTime && businessHours.getNextAvailableTime()
           },
           welcomeMessage
         }

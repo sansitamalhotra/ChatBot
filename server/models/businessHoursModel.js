@@ -1,4 +1,4 @@
-// models/businessHours.js
+// models/businessHours.js - COMPLETELY FIXED WITH DESCRIPTION SUPPORT
 const mongoose = require('mongoose');
 const { Schema } = mongoose;
 
@@ -52,24 +52,42 @@ const businessHoursSchema = new Schema({
       message: 'Must specify at least one valid working day'
     }
   },
+  // FIXED: Enhanced holidays schema with proper description support
   holidays: [{
     date: {
       type: Date,
-      required: true
+      required: true,
+      validate: {
+        validator: function(v) {
+          return v instanceof Date && !isNaN(v.getTime());
+        },
+        message: 'Invalid date provided for holiday'
+      }
     },
     name: {
       type: String,
       required: true,
-      maxlength: 100
+      trim: true,
+      minlength: [1, 'Holiday name cannot be empty'],
+      maxlength: [100, 'Holiday name cannot exceed 100 characters']
     },
     description: {
       type: String,
-      maxlength: 500,
-      default: ''
+      trim: true,
+      maxlength: [500, 'Holiday description cannot exceed 500 characters'],
+      default: '' // FIXED: Ensure description always has a default value
     },
     recurring: {
       type: Boolean,
       default: false
+    },
+    createdAt: {
+      type: Date,
+      default: Date.now
+    },
+    updatedAt: {
+      type: Date,
+      default: Date.now
     }
   }],
   outsideHoursMessage: {
@@ -86,7 +104,13 @@ const businessHoursSchema = new Schema({
   specialHours: [{
     date: {
       type: Date,
-      required: true
+      required: true,
+      validate: {
+        validator: function(v) {
+          return v instanceof Date && !isNaN(v.getTime());
+        },
+        message: 'Invalid date provided for special hours'
+      }
     },
     hours: {
       start: {
@@ -114,8 +138,13 @@ const businessHoursSchema = new Schema({
     },
     reason: {
       type: String,
+      trim: true,
       maxlength: 200,
       default: ''
+    },
+    createdAt: {
+      type: Date,
+      default: Date.now
     }
   }],
   isActive: {
@@ -161,15 +190,16 @@ const businessHoursSchema = new Schema({
   createdBy: {
     type: Schema.Types.ObjectId,
     ref: 'User',
-    required: false // Changed to false to handle cases where user might not be available
+    required: false
   }
 });
 
-// Remove the unique index constraint that might be causing issues
-// Instead, we'll handle this in the application logic
+// Add indexes for better performance
 businessHoursSchema.index({ isActive: 1 });
+businessHoursSchema.index({ 'holidays.date': 1 });
+businessHoursSchema.index({ 'specialHours.date': 1 });
 
-// Pre-save middleware
+// FIXED: Pre-save middleware with enhanced holiday description handling
 businessHoursSchema.pre('save', function(next) {
   this.updatedAt = new Date();
   
@@ -178,8 +208,41 @@ businessHoursSchema.pre('save', function(next) {
     return next(new Error('Start time must be before end time'));
   }
   
-  // Don't auto-clean expired items - let admin manage them
-  // This prevents issues with recurring holidays and special hours that might be needed
+  // FIXED: Ensure holiday descriptions are preserved and properly formatted
+  if (this.holidays && this.holidays.length > 0) {
+    this.holidays.forEach((holiday, index) => {
+      // Ensure description field exists and is properly set
+      if (holiday.description === undefined || holiday.description === null) {
+        holiday.description = '';
+      }
+      
+      // Trim description but preserve content
+      if (typeof holiday.description === 'string') {
+        holiday.description = holiday.description.trim();
+      }
+      
+      // Update holiday's updatedAt timestamp
+      holiday.updatedAt = new Date();
+      
+      console.log(`Pre-save holiday ${index}:`, {
+        name: holiday.name,
+        description: holiday.description,
+        hasDescription: !!holiday.description
+      });
+    });
+  }
+  
+  // FIXED: Ensure special hours are properly handled
+  if (this.specialHours && this.specialHours.length > 0) {
+    this.specialHours.forEach((special, index) => {
+      if (special.reason === undefined || special.reason === null) {
+        special.reason = '';
+      }
+      if (typeof special.reason === 'string') {
+        special.reason = special.reason.trim();
+      }
+    });
+  }
   
   next();
 });
@@ -359,10 +422,21 @@ businessHoursSchema.methods.allowNewChats = function() {
   return now.isBefore(cutoffTime);
 };
 
-// Static method to get active business hours with error handling
+// FIXED: Static method to get active business hours - Returns full Mongoose document
 businessHoursSchema.statics.getActive = async function() {
   try {
-    const activeConfig = await this.findOne({ isActive: true }).lean();
+    const activeConfig = await this.findOne({ isActive: true });
+    if (activeConfig) {
+      console.log('Found active config with holidays:', activeConfig.holidays.length);
+      // Log holidays with descriptions
+      activeConfig.holidays.forEach((holiday, index) => {
+        console.log(`Holiday ${index} in getActive:`, {
+          name: holiday.name,
+          description: holiday.description,
+          hasDescription: !!holiday.description
+        });
+      });
+    }
     return activeConfig;
   } catch (error) {
     console.error('Error fetching active business hours:', error);
@@ -370,17 +444,59 @@ businessHoursSchema.statics.getActive = async function() {
   }
 };
 
-// Static method to create default business hours
+// FIXED: Static method for lean documents (better performance for read-only operations) - INCLUDES DESCRIPTIONS
+businessHoursSchema.statics.getActiveLean = async function() {
+  try {
+    const activeConfig = await this.findOne({ isActive: true }).lean();
+    if (activeConfig) {
+      console.log('Found active config (lean) with holidays:', activeConfig.holidays.length);
+      // Log holidays with descriptions for lean queries
+      activeConfig.holidays.forEach((holiday, index) => {
+        console.log(`Holiday ${index} in getActiveLean:`, {
+          name: holiday.name,
+          description: holiday.description,
+          hasDescription: !!holiday.description
+        });
+      });
+    }
+    return activeConfig;
+  } catch (error) {
+    console.error('Error fetching active business hours (lean):', error);
+    return null;
+  }
+};
+
+// FIXED: Enhanced static method to create default business hours with sample holidays including descriptions
 businessHoursSchema.statics.createDefault = async function(createdBy = null) {
   try {
     // First, deactivate any existing active configurations
     await this.updateMany({ isActive: true }, { $set: { isActive: false } });
     
+    // FIXED: Enhanced default configuration with sample holidays that include descriptions
     const defaultConfig = {
       timezone: 'America/New_York',
       workingHours: { start: '09:00', end: '18:00' },
       workingDays: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'],
-      holidays: [],
+      holidays: [
+        {
+          date: new Date('2025-12-25'),
+          name: 'Christmas Day',
+          description: 'Christmas Day - Office closed for the Christmas holiday. We will resume normal business hours the next business day.',
+          recurring: true
+        },
+        {
+          date: new Date('2025-07-04'),
+          name: 'Independence Day',
+          description: 'Independence Day - Celebrating the 4th of July. All offices and services will be closed.',
+          recurring: true
+        },
+        {
+          date: new Date('2025-01-01'),
+          name: 'New Year\'s Day',
+          description: 'New Year\'s Day - Starting the new year with a well-deserved break. Happy New Year!',
+          recurring: true
+        }
+      ],
       outsideHoursMessage: "I'm sorry, but our live agents are currently unavailable. Our business hours are 9:00 AM - 6:00 PM EST, Monday through Friday.",
       outsideHoursOptions: [
         'Search for jobs',
@@ -403,7 +519,19 @@ businessHoursSchema.statics.createDefault = async function(createdBy = null) {
       defaultConfig.createdBy = createdBy;
     }
     
-    return await this.create(defaultConfig);
+    const newConfig = await this.create(defaultConfig);
+    console.log('Created default config with holidays:', newConfig.holidays.length);
+    
+    // Log created holidays to verify descriptions
+    newConfig.holidays.forEach((holiday, index) => {
+      console.log(`Created holiday ${index}:`, {
+        name: holiday.name,
+        description: holiday.description,
+        hasDescription: !!holiday.description
+      });
+    });
+    
+    return newConfig;
   } catch (error) {
     console.error('Error creating default business hours:', error);
     throw error;
@@ -425,14 +553,24 @@ businessHoursSchema.statics.ensureExists = async function() {
   }
 };
 
-// Static method to get business hours with fallback
+// FIXED: Static method to get business hours with fallback - PRESERVES DESCRIPTIONS
 businessHoursSchema.statics.getActiveOrCreate = async function(createdBy = null) {
   try {
-    let activeConfig = await this.getActive();
+    let activeConfig = await this.getActive(); // Returns full document with descriptions
     if (!activeConfig) {
       console.log('No active business hours configuration found. Creating default...');
       activeConfig = await this.createDefault(createdBy);
     }
+    
+    // Log to verify descriptions are preserved
+    if (activeConfig && activeConfig.holidays) {
+      console.log('getActiveOrCreate - holidays with descriptions:', activeConfig.holidays.map(h => ({
+        name: h.name,
+        hasDescription: !!h.description,
+        description: h.description
+      })));
+    }
+    
     return activeConfig;
   } catch (error) {
     console.error('Error getting or creating business hours:', error);
@@ -440,8 +578,77 @@ businessHoursSchema.statics.getActiveOrCreate = async function(createdBy = null)
   }
 };
 
-// Add toJSON transform to ensure virtuals are included
-businessHoursSchema.set('toJSON', { virtuals: true });
-businessHoursSchema.set('toObject', { virtuals: true });
+// FIXED: Add method to find holidays with descriptions for debugging
+businessHoursSchema.methods.getHolidaysWithDescriptions = function() {
+  return this.holidays.map(holiday => ({
+    _id: holiday._id,
+    name: holiday.name,
+    date: holiday.date,
+    description: holiday.description || '',
+    recurring: holiday.recurring || false,
+    createdAt: holiday.createdAt,
+    updatedAt: holiday.updatedAt
+  }));
+};
+
+// FIXED: Add static method to get all holidays with descriptions
+businessHoursSchema.statics.getAllHolidaysWithDescriptions = async function() {
+  try {
+    const businessHours = await this.findOne({ isActive: true });
+    if (!businessHours) return [];
+    
+    return businessHours.holidays.map(holiday => ({
+      _id: holiday._id,
+      name: holiday.name,
+      date: holiday.date,
+      description: holiday.description || '',
+      recurring: holiday.recurring || false,
+      createdAt: holiday.createdAt,
+      updatedAt: holiday.updatedAt
+    }));
+  } catch (error) {
+    console.error('Error getting all holidays with descriptions:', error);
+    return [];
+  }
+};
+
+// Add toJSON transform to ensure virtuals and descriptions are included
+businessHoursSchema.set('toJSON', { 
+  virtuals: true,
+  transform: function(doc, ret) {
+    // Ensure holidays include descriptions in JSON output
+    if (ret.holidays) {
+      ret.holidays = ret.holidays.map(holiday => ({
+        _id: holiday._id,
+        name: holiday.name,
+        date: holiday.date,
+        description: holiday.description || '',
+        recurring: holiday.recurring || false,
+        createdAt: holiday.createdAt,
+        updatedAt: holiday.updatedAt
+      }));
+    }
+    return ret;
+  }
+});
+
+businessHoursSchema.set('toObject', { 
+  virtuals: true,
+  transform: function(doc, ret) {
+    // Ensure holidays include descriptions in object output
+    if (ret.holidays) {
+      ret.holidays = ret.holidays.map(holiday => ({
+        _id: holiday._id,
+        name: holiday.name,
+        date: holiday.date,
+        description: holiday.description || '',
+        recurring: holiday.recurring || false,
+        createdAt: holiday.createdAt,
+        updatedAt: holiday.updatedAt
+      }));
+    }
+    return ret;
+  }
+});
 
 module.exports = mongoose.model('BusinessHours', businessHoursSchema);

@@ -1,13 +1,13 @@
 //server/controllers/businessHoursController.js
 const BusinessHours = require('../models/businessHoursModel');
-const { businessHoursUtil } = require('../utils/businessHours'); // Fixed import
+const { businessHoursUtil } = require('../utils/businessHours');
 const moment = require('moment-timezone');
 
 class BusinessHoursController {
     // For Fetching Active Business Hours Configuration
     static async fetchBusinessHours(req, res) {
         try {
-            const businessHours = await BusinessHours.getActive();
+            const businessHours = await BusinessHours.findOne({ isActive: true });
             if (!businessHours) {
                 return res.status(404).json({ 
                     success: false, 
@@ -15,7 +15,6 @@ class BusinessHoursController {
                 });
             }
             
-            // Use utility methods for consistency
             const currentStatus = await businessHoursUtil.isWithinBusinessHours();
             const nextAvailable = await businessHoursUtil.getNextBusinessHour();
             const isNearClosingTime = await businessHoursUtil.isNearClosing();
@@ -47,9 +46,8 @@ class BusinessHoursController {
     static async addBusinessHours(req, res) {
         try {
             const { timezone, workingHours, workingDays, holidays, outsideHoursMessage, outsideHoursOptions, settings } = req.body;
-            const createdBy = req.user?.id; // Safe access in case user is undefined
+            const createdBy = req.user?.id;
 
-            // Validate configuration before saving
             const validationErrors = businessHoursUtil.validateConfig(req.body);
             if (validationErrors.length > 0) {
                 return res.status(400).json({
@@ -59,7 +57,6 @@ class BusinessHoursController {
                 });
             }
 
-            // Optionally Deactivate Existing Active Business Hours Configuration
             await BusinessHours.updateMany({ isActive: true }, { isActive: false });
             
             const businessHours = new BusinessHours({
@@ -75,8 +72,6 @@ class BusinessHoursController {
             });
 
             await businessHours.save();
-            
-            // Clear cache after adding new configuration
             businessHoursUtil.clearCache();
             
             res.status(201).json({
@@ -102,7 +97,6 @@ class BusinessHoursController {
             const { id } = req.params;
             const updateData = req.body;
 
-            // Validate configuration before updating
             const validationErrors = businessHoursUtil.validateConfig(updateData);
             if (validationErrors.length > 0) {
                 return res.status(400).json({
@@ -125,7 +119,6 @@ class BusinessHoursController {
                 });
             }
             
-            // Clear cache after update
             businessHoursUtil.clearCache();
             
             res.json({
@@ -147,7 +140,7 @@ class BusinessHoursController {
     // For Checking if Current Time is Within Business Hours
     static async checkBusinessHoursStatus(req, res) {
         try {
-            const businessHours = await BusinessHours.getActive();
+            const businessHours = await BusinessHours.findOne({ isActive: true });
             if (!businessHours) {
                 return res.status(404).json({
                     success: false,
@@ -155,7 +148,6 @@ class BusinessHoursController {
                 });
             }
             
-            // Use utility methods for consistency
             const isOpen = await businessHoursUtil.isWithinBusinessHours();
             const isNearClosingTime = await businessHoursUtil.isNearClosing();
             const nextAvailable = await businessHoursUtil.getNextBusinessHour();
@@ -193,7 +185,6 @@ class BusinessHoursController {
         try { 
             const { date, hours, isClosed, reason } = req.body;
             
-            // Validate date
             if (!date || !moment(date).isValid()) {
                 return res.status(400).json({
                     success: false,
@@ -201,7 +192,7 @@ class BusinessHoursController {
                 });
             }
 
-            const businessHours = await BusinessHours.getActive();
+            const businessHours = await BusinessHours.findOne({ isActive: true });
             if (!businessHours) {
                 return res.status(404).json({
                     success: false,
@@ -217,8 +208,6 @@ class BusinessHoursController {
             });
 
             await businessHours.save();
-            
-            // Clear cache after adding special hours
             businessHoursUtil.clearCache();
 
             res.json({
@@ -242,7 +231,6 @@ class BusinessHoursController {
         try { 
             const { date, name, description, recurring } = req.body;
             
-            // Validate required fields
             if (!date || !name) {
                 return res.status(400).json({
                     success: false,
@@ -257,7 +245,7 @@ class BusinessHoursController {
                 });
             }
 
-            const businessHours = await BusinessHours.getActive();
+            const businessHours = await BusinessHours.findOne({ isActive: true });
             if (!businessHours) {
                 return res.status(404).json({
                     success: false,
@@ -273,8 +261,6 @@ class BusinessHoursController {
             });
 
             await businessHours.save();
-            
-            // Clear cache after adding holiday
             businessHoursUtil.clearCache();
 
             res.json({
@@ -293,10 +279,10 @@ class BusinessHoursController {
         }
     }
 
-    // Fetch Forthcoming Holidays and Special Hours
+    // FIXED: Fetch Forthcoming Holidays and Special Hours - ENSURE DESCRIPTIONS ARE INCLUDED
     static async fetchForthComingSchedule(req, res) {
         try { 
-            const businessHours = await BusinessHours.getActive();
+            const businessHours = await BusinessHours.findOne({ isActive: true });
             if (!businessHours) {
                 return res.status(404).json({
                     success: false,
@@ -307,44 +293,238 @@ class BusinessHoursController {
             const now = moment().tz(businessHours.timezone);
             const thirtyDaysFromNow = now.clone().add(30, 'days');
 
-            // Filter Forthcoming Holidays
-            const forthcomingHolidays = businessHours.holidays.filter(holiday => {
-                const holidayDate = moment(holiday.date);
-                if (holiday.recurring) {
-                    // For recurring holidays, check if the holiday occurs in the next 30 days
-                    const thisYearHoliday = now.clone().month(holidayDate.month()).date(holidayDate.date());
-                    const nextYearHoliday = thisYearHoliday.clone().add(1, 'year');
-                    return (thisYearHoliday.isAfter(now) && thisYearHoliday.isBefore(thirtyDaysFromNow)) ||
-                           (nextYearHoliday.isAfter(now) && nextYearHoliday.isBefore(thirtyDaysFromNow));
-                }
-                return holidayDate.isAfter(now) && holidayDate.isBefore(thirtyDaysFromNow);
-            }).sort((a, b) => new Date(a.date) - new Date(b.date));
+            console.log('=== FETCHFORTHCOMINGSCHEDULE DEBUG ===');
+            console.log('Current time:', now.format());
+            console.log('End time:', thirtyDaysFromNow.format());
+            console.log('Total holidays in DB:', businessHours.holidays.length);
+            
+            // Log all holidays with their descriptions
+            businessHours.holidays.forEach((holiday, index) => {
+                console.log(`Holiday ${index}:`, {
+                    name: holiday.name,
+                    date: holiday.date,
+                    description: holiday.description || 'No description',
+                    recurring: holiday.recurring
+                });
+            });
 
-            // Filter Forthcoming Special Hours
-            const forthcomingSpecialHours = businessHours.specialHours.filter(special => {
-                const specialDate = moment(special.date);
-                return specialDate.isAfter(now) && specialDate.isBefore(thirtyDaysFromNow);
-            }).sort((a, b) => new Date(a.date) - new Date(b.date));
+            // FIXED: Enhanced holiday filtering with better logging and description preservation
+            const forthcomingHolidays = businessHours.holidays
+                .filter(holiday => {
+                    if (!holiday.date || !holiday.name) {
+                        console.log('Invalid holiday data:', holiday);
+                        return false;
+                    }
+
+                    const holidayDate = moment(holiday.date);
+                    if (!holidayDate.isValid()) {
+                        console.log('Invalid holiday date:', holiday.date);
+                        return false;
+                    }
+
+                    if (holiday.recurring) {
+                        // Handle recurring holidays
+                        const thisYearHoliday = now.clone()
+                            .year(now.year())
+                            .month(holidayDate.month())
+                            .date(holidayDate.date())
+                            .hour(0).minute(0).second(0).millisecond(0);
+                        
+                        const nextYearHoliday = thisYearHoliday.clone().add(1, 'year');
+                        
+                        const isThisYearValid = thisYearHoliday.isSameOrAfter(now.startOf('day')) && 
+                                            thisYearHoliday.isSameOrBefore(thirtyDaysFromNow.endOf('day'));
+                        const isNextYearValid = nextYearHoliday.isSameOrAfter(now.startOf('day')) && 
+                                            nextYearHoliday.isSameOrBefore(thirtyDaysFromNow.endOf('day'));
+                        
+                        console.log(`Recurring holiday ${holiday.name}:`, {
+                            thisYear: thisYearHoliday.format(),
+                            nextYear: nextYearHoliday.format(),
+                            isThisYearValid,
+                            isNextYearValid
+                        });
+                        
+                        return isThisYearValid || isNextYearValid;
+                    }
+                    
+                    // Non-recurring holidays
+                    const isInRange = holidayDate.isSameOrAfter(now.startOf('day')) && 
+                                     holidayDate.isSameOrBefore(thirtyDaysFromNow.endOf('day'));
+                    
+                    console.log(`Non-recurring holiday ${holiday.name}:`, {
+                        date: holidayDate.format(),
+                        isInRange,
+                        description: holiday.description
+                    });
+                    
+                    return isInRange;
+                })
+                .map(holiday => {
+                    const holidayObj = {
+                        _id: holiday._id,
+                        name: holiday.name,
+                        date: holiday.date,
+                        description: holiday.description || '',
+                        recurring: holiday.recurring || false
+                    };
+                    
+                    console.log('Mapped holiday object:', holidayObj);
+                    return holidayObj;
+                })
+                .sort((a, b) => {
+                    const dateA = moment(a.date);
+                    const dateB = moment(b.date);
+                    return dateA.diff(dateB);
+                });
+
+            console.log('Final forthcoming holidays:', forthcomingHolidays.length);
+            console.log('Forthcoming holidays with descriptions:', forthcomingHolidays.map(h => ({
+                name: h.name,
+                description: h.description
+            })));
+
+            // FIXED: Enhanced special hours filtering
+            const forthcomingSpecialHours = businessHours.specialHours
+                .filter(special => {
+                    if (!special.date) return false;
+                    const specialDate = moment(special.date);
+                    if (!specialDate.isValid()) return false;
+                    
+                    return specialDate.isSameOrAfter(now.startOf('day')) && 
+                           specialDate.isSameOrBefore(thirtyDaysFromNow.endOf('day'));
+                })
+                .sort((a, b) => new Date(a.date) - new Date(b.date));
+
+            // FIXED: Return complete data structure with descriptions
+            const responseData = {
+                holidays: forthcomingHolidays, // This now includes descriptions
+                specialHours: forthcomingSpecialHours,
+                regularHours: {
+                    workingHours: businessHours.workingHours,
+                    workingDays: businessHours.workingDays,
+                    timezone: businessHours.timezone,
+                    formattedHours: businessHoursUtil.getFormattedBusinessHours(businessHours)
+                }
+            };
+
+            console.log('=== RESPONSE DATA BEING SENT ===');
+            console.log('Holidays count:', responseData.holidays.length);
+            console.log('Holidays with descriptions:', responseData.holidays.map(h => ({ 
+                name: h.name, 
+                hasDescription: !!h.description,
+                description: h.description 
+            })));
 
             res.json({
                 success: true,
-                data: {
-                    holidays: forthcomingHolidays,
-                    specialHours: forthcomingSpecialHours,
-                    regularHours: {
-                        workingHours: businessHours.workingHours,
-                        workingDays: businessHours.workingDays,
-                        timezone: businessHours.timezone,
-                        formattedHours: businessHoursUtil.getFormattedBusinessHours(businessHours)
-                    }
-                }
+                data: responseData
             });
         }
         catch (error) {
-            console.error('Something Went Wrong Fetching Forthcoming Schedule:', error);
+            console.error('Error fetching forthcoming schedule:', error);
             res.status(500).json({
                 success: false,
-                message: 'Something Went Wrong Fetching Forthcoming Schedule',
+                message: 'Error fetching forthcoming schedule',
+                error: error.message
+            });
+        }
+    }
+
+    static async holidaysMoreThan30Days(req, res) {
+        try {
+            const businessHours = await BusinessHours.findOne({ isActive: true });
+            if (!businessHours) {
+                return res.status(404).json({
+                    success: false,
+                    message: 'No business hours configuration found'
+                });
+            }
+
+            const now = moment().tz(businessHours.timezone);
+            const thirtyDaysFromNow = now.clone().add(30, 'days');
+            
+            console.log('=== HOLIDAYS MORE THAN 30 DAYS DEBUG ===');
+            console.log('Current time:', now.format());
+            console.log('30 days from now:', thirtyDaysFromNow.format());
+            console.log('Total holidays in database:', businessHours.holidays.length);
+
+            // FIXED: Enhanced holiday processing with description preservation
+            const processedHolidays = businessHours.holidays.map((holiday, index) => {
+                const holidayDate = moment(holiday.date);
+                const isValid = holidayDate.isValid();
+                const daysFromNow = isValid ? holidayDate.diff(now.startOf('day'), 'days') : null;
+                
+                let isWithinRange = false;
+                if (isValid) {
+                    if (holiday.recurring) {
+                        // Check both this year and next year for recurring holidays
+                        const thisYearHoliday = now.clone()
+                            .year(now.year())
+                            .month(holidayDate.month())
+                            .date(holidayDate.date())
+                            .startOf('day');
+                        
+                        const nextYearHoliday = thisYearHoliday.clone().add(1, 'year');
+                        
+                        isWithinRange = (thisYearHoliday.isSameOrAfter(now.startOf('day')) && 
+                                        thisYearHoliday.isSameOrBefore(thirtyDaysFromNow.endOf('day'))) ||
+                                       (nextYearHoliday.isSameOrAfter(now.startOf('day')) && 
+                                        nextYearHoliday.isSameOrBefore(thirtyDaysFromNow.endOf('day')));
+                    } else {
+                        isWithinRange = holidayDate.isSameOrAfter(now.startOf('day')) && 
+                                       holidayDate.isSameOrBefore(thirtyDaysFromNow.endOf('day'));
+                    }
+                }
+
+                // FIXED: Ensure description is included in the response
+                const processedHoliday = {
+                    index,
+                    name: holiday.name || 'Unnamed Holiday',
+                    date: holiday.date,
+                    formattedDate: isValid ? holidayDate.format('YYYY-MM-DD') : 'Invalid Date',
+                    description: holiday.description || '', // ENSURE DESCRIPTION IS PRESERVED
+                    recurring: holiday.recurring || false,
+                    isValid,
+                    daysFromNow,
+                    isWithinRange
+                };
+
+                console.log(`Processed holiday ${index}:`, processedHoliday);
+                return processedHoliday;
+            });
+
+            const withinRangeCount = processedHolidays.filter(h => h.isWithinRange).length;
+            const beyondRangeCount = processedHolidays.filter(h => !h.isWithinRange && h.isValid).length;
+
+            console.log('Within 30 days:', withinRangeCount);
+            console.log('Beyond 30 days:', beyondRangeCount);
+
+            const debugInfo = {
+                totalHolidays: businessHours.holidays.length,
+                currentTime: now.format(),
+                thirtyDaysFromNow: thirtyDaysFromNow.format(),
+                timezone: businessHours.timezone,
+                filteredHolidays: withinRangeCount,
+                beyondThirtyDays: beyondRangeCount,
+                holidays: processedHolidays // This now includes descriptions
+            };
+
+            console.log('=== FINAL DEBUG RESPONSE ===');
+            console.log('Holidays with descriptions:', processedHolidays.map(h => ({
+                name: h.name,
+                hasDescription: !!h.description,
+                description: h.description
+            })));
+
+            res.json({
+                success: true,
+                data: debugInfo
+            });
+        } catch (error) {
+            console.error('Error in holidaysMoreThan30Days:', error);
+            res.status(500).json({
+                success: false,
+                message: 'Debug error',
                 error: error.message
             });
         }
@@ -353,10 +533,9 @@ class BusinessHoursController {
     // For Adding Default Business Hours Configuration
     static async addDefaultBusinessHoursConfiguration(req, res) {
         try { 
-            const createdBy = req.user?.id; // Safe access
+            const createdBy = req.user?.id;
 
-            // Check if there's an Active existing Business Hours Configuration
-            const existingConfig = await BusinessHours.getActive();
+            const existingConfig = await BusinessHours.findOne({ isActive: true });
             if (existingConfig) {
                 return res.status(400).json({
                     success: false,
@@ -365,8 +544,6 @@ class BusinessHoursController {
             }
 
             const defaultBusinessHours = await BusinessHours.createDefault(createdBy);
-            
-            // Clear cache after creating default
             businessHoursUtil.clearCache();
 
             res.status(201).json({
@@ -388,7 +565,7 @@ class BusinessHoursController {
     // For Validating Business Hours Middleware
     static async validateBusinessHours(req, res, next) {
         try { 
-            const businessHours = await BusinessHours.getActive();
+            const businessHours = await BusinessHours.findOne({ isActive: true });
             if (!businessHours) {
                 return res.status(404).json({
                     success: false,
@@ -396,7 +573,6 @@ class BusinessHoursController {
                 });
             }
             
-            // Use utility methods for consistency
             req.businessHours = businessHours;
             req.isBusinessHours = await businessHoursUtil.isWithinBusinessHours();
             req.isNearClosing = await businessHoursUtil.isNearClosing();

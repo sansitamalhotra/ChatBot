@@ -5,6 +5,8 @@ const ChatMetrics = require('../models/chatMetricsModel');
 const ChatTemplate = require('../models/chatTemplateModel');
 const LiveAgent = require('../models/liveAgentModel');
 const BusinessHours = require('../models/businessHoursModel');
+const encryptionService = require('../services/encryptionService');
+const { logWithIcon } = require('../services/consoleIcons');
 
 class ChatMessageController {
   // Send message in chat session
@@ -19,7 +21,7 @@ class ChatMessageController {
       if (!session) {
         return res.status(404).json({
           success: false,
-          message: 'Chat session not found'
+          message: 'Chat Session NOT FOUND!'
         });
       }
 
@@ -27,31 +29,37 @@ class ChatMessageController {
       if (userRole === 'user' && session.userId.toString() !== userId) {
         return res.status(403).json({
           success: false,
-          message: 'Access denied to this chat session'
+          message: 'Access Denied to this Chat Session'
         });
       }
 
       if (userRole === 'agent' && session.agentId?.toString() !== req.user.agentId) {
         return res.status(403).json({
           success: false,
-          message: 'You are not assigned to this chat session'
+          message: 'You are not Assigned to this Chat Session'
         });
       }
-
       // Determine sender details
       const senderInfo = this.determineSenderInfo(userRole, req.user);
 
-      // Create message
+      // Let's Sanitize/Truncate Messages if Neccessary
+      const trimmed = typeof message === 'string' ? message.trim() : String(message || '');
+
+      // Now we Encrypt Message for Database Storage
+      const { encrypted, encryptedFlag } = encryptionService.encrypt(trimmed);
+
+      // Next Step: Create message
       const chatMessage = new ChatMessage({
         sessionId,
         senderId: senderInfo.senderId,
         senderModel: senderInfo.senderModel,
         senderType: senderInfo.senderType,
-        message: message.trim(),
+        message: encrypted,
         messageType,
         metadata: {
           ...metadata,
-          businessHoursMessage: !req.isBusinessHours
+          businessHoursMessage: !req.isBusinessHours,
+          encrypted: !!encryptedFlag
         }
       });
 
@@ -71,20 +79,24 @@ class ChatMessageController {
           // Send bot response after a brief delay to simulate typing
           setTimeout(async () => {
             await this.sendBotMessage(sessionId, botResponse);
-          }, 1000);
+          }, 800);
         }
       }
-
       // Populate sender information for response
       await chatMessage.populate('senderId', 'firstname lastname name email');
+      // Now we have to Dcrypt Message for outgoing payload such that Users/Guest can see plain Texts
+      const outgoing = chatMessage.toObject();
+      if (outgoing.message && chatMessage.metadata?.encrypted) {
+        outgoing.message = encryptionService.decrypt(outgoing.message);
+      }
 
       res.status(201).json({
         success: true,
         message: 'Message sent successfully',
-        data: chatMessage
+        data: outgoing
       });
     } catch (error) {
-      console.error('Error sending message:', error);
+      logWithIcon.error('Error sending message:', error);
       res.status(500).json({
         success: false,
         message: 'Error sending message',
@@ -93,11 +105,13 @@ class ChatMessageController {
     }
   }
 
-  // Get conversation history
+  // Get conversation history with Pagination
   static async getConversationHistory(req, res) {
     try {
-      const { sessionId } = req.params;
-      const { limit = 50, page = 1 } = req.query;
+      const sessionId = req.params.sessionId || req.body.sessionId || req.query.sessionId;
+      const limit = parseInt(req.query.limit || 50);
+      const page = parseInt(req.query.page || 1);
+      const offset = (page - 1) * limit;
       const userId = req.user.id;
       const userRole = req.user.role || 'user';
 
@@ -125,7 +139,24 @@ class ChatMessageController {
         });
       }
 
-      const messages = await ChatMessage.getConversationHistory(sessionId, parseInt(limit), parseInt(page));
+      const messages = await ChatMessage.find({ sessionId })
+        .sort({ createdAt: -1 })
+        .skip(offset)
+        .limit(limit)
+        .populate('senderId', 'firstname lastname name email')
+        .lean();
+      
+      // Dcrypt Messages Before Returning
+      const decrypted = messages.map(m => {
+        if (m.message && m.metadata?.encrypted) {
+          try {
+            m.message = encryptionService.decrypt(m.message);
+          } catch (error) {
+            logWithIcon.error('Dcrypt Message Error: ', error);
+          }
+        }
+        return m;
+      })
 
       // Mark messages as read if user is reading them
       if (userRole === 'user') {
@@ -141,17 +172,15 @@ class ChatMessageController {
 
       res.json({
         success: true,
-        data: {
-          messages,
-          pagination: {
-            page: parseInt(page),
-            limit: parseInt(limit),
-            total: await ChatMessage.countDocuments({ sessionId })
-          }
+        data: decrypted,
+        pagination: {
+          page,
+          limit,
+          total: await ChatMessage.countDocuments({ sessionId })
         }
       });
     } catch (error) {
-      console.error('Error fetching conversation history:', error);
+      logWithIcon.error('Error fetching conversation history:', error);
       res.status(500).json({
         success: false,
         message: 'Error fetching conversation history',
@@ -160,7 +189,7 @@ class ChatMessageController {
     }
   }
 
-  // Send bot message (internal method accessible via API for testing)
+   // send bot message (internal): store encrypted and return decrypted for broadcast if needed
   static async sendBotMessage(sessionId, messageData) {
     try {
       const session = await ChatSession.findById(sessionId);
@@ -168,17 +197,21 @@ class ChatMessageController {
         throw new Error('Session not found');
       }
 
+      const content = messageData.message || '';
+      const { encrypted, encryptedFlag } = encryptionService.encrypt(content);
+      
       const botMessage = new ChatMessage({
         sessionId,
-        senderId: sessionId, // Use session ID as bot identifier
+        senderId: sessionId, // Use session as system id
         senderModel: 'System',
         senderType: 'bot',
-        message: messageData.message,
+        message: encrypted,
         messageType: messageData.messageType || 'text',
         metadata: {
           ...messageData.metadata,
           quickReplies: messageData.quickReplies || [],
-          templateId: messageData.templateId || null
+          templateId: messageData.templateId || null,
+          encrypted: !!encryptedFlag
         }
       });
 
@@ -191,9 +224,13 @@ class ChatMessageController {
       // Update metrics
       await this.updateMessageMetrics(sessionId, 'bot');
 
-      return botMessage;
+      // Prepare message for broadcasting (decrypted)
+      const out = botMessage.toObject();
+      out.message = encryptionService.decrypt(out.message);
+
+      return out;
     } catch (error) {
-      console.error('Error sending bot message:', error);
+      logWithIcon.error('Error sending bot message:', error);
       throw error;
     }
   }
@@ -346,13 +383,26 @@ class ChatMessageController {
       const messages = await ChatMessage.find(searchCriteria)
         .limit(parseInt(limit))
         .sort({ timestamp: -1 })
-        .populate('senderId', 'firstname lastname name email');
+        .populate('senderId', 'firstname lastname name email')
+        .lean();
+
+      // Decrypt Messages Before Returning (FIXED)
+      const decryptedMessages = messages.map(m => {
+        if (m.message && m.metadata?.encrypted) {
+          try {
+            m.message = encryptionService.decrypt(m.message);
+          } catch (error) {
+            logWithIcon.error('Decrypt Message Error: ', error);
+          }
+        }
+        return m;
+      });
 
       res.json({
         success: true,
         data: {
-          messages,
-          total: messages.length,
+          messages: decryptedMessages,
+          total: decryptedMessages.length,
           searchCriteria: {
             query,
             messageType,
@@ -402,13 +452,30 @@ class ChatMessageController {
         data: { stats }
       });
     } catch (error) {
-      console.error('Error getting message stats:', error);
+      logWithIcon.error('Error getting message stats:', error);
       res.status(500).json({
         success: false,
         message: 'Error getting message statistics',
         error: error.message
       });
     }
+  }
+
+  // Helper method to decrypt message objects (ADDED)
+  static decryptMessageObject(messageObj) {
+    if (messageObj.message && messageObj.metadata?.encrypted) {
+      try {
+        messageObj.message = encryptionService.decrypt(messageObj.message);
+      } catch (error) {
+        logWithIcon.error('Decrypt Message Error: ', error);
+      }
+    }
+    return messageObj;
+  }
+
+  // Helper method to decrypt array of messages (ADDED)
+  static decryptMessages(messages) {
+    return messages.map(m => this.decryptMessageObject(m));
   }
 
   // Helper methods
@@ -449,15 +516,28 @@ class ChatMessageController {
         await metrics.save();
       }
     } catch (error) {
-      console.error('Error updating message metrics:', error);
+      logWithIcon.error('Error updating message metrics:', error);
     }
   }
 
   static async generateBotResponse(session, userMessage, messageType) {
     try {
+      // Try selecting a general bot_response template first
+      try {
+        const templates = await require('../services/chatTemplateCache').findByTypeAndCategory('bot_response', 'general', null);
+        if (templates && templates.length > 0) {
+          // pick highest priority
+          const tpl = templates[0];
+          await ChatTemplate.findByIdAndUpdate(tpl._id, { $inc: { 'usage.timesUsed': 1 }, 'usage.lastUsed': new Date() });
+          const rendered = tpl.render({ firstName: session.userInfo.firstName });
+          return { message: rendered, messageType: 'text', quickReplies: tpl.quickReplies || [], templateId: tpl._id };
+        }
+      } catch (err) {
+        // fallback to keyword-based responses below
+        console.error('template selection error in generateContextualResponse', err);
+      }
       const businessHours = await BusinessHours.getActive();
       const isBusinessHours = businessHours ? businessHours.isCurrentlyOpen() : false;
-
       // Handle different message types
       if (messageType === 'option_selection') {
         return await this.handleOptionSelection(session, userMessage, isBusinessHours);
@@ -470,7 +550,7 @@ class ChatMessageController {
       // Generate contextual response
       return await this.generateContextualResponse(session, userMessage, isBusinessHours);
     } catch (error) {
-      console.error('Error generating bot response:', error);
+      logWithIcon.error('Error generating bot response:', error);
       return {
         message: "I'm sorry, I'm having trouble processing your request right now. Please try again or contact support.",
         messageType: 'text'

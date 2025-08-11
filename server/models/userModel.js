@@ -1,3 +1,4 @@
+//server/models/userModel.js
 const mongoose = require("mongoose");
 const { model, Schema, Document } = require("mongoose");
 const { omit } = require("ramda");
@@ -7,7 +8,6 @@ const jwt = require("jsonwebtoken");
 const { ObjectId } = mongoose.Schema;
 
 const userSchema = new mongoose.Schema({
-
   firstname: {
     type: String,
     required: true,
@@ -167,7 +167,5 @@ userSchema.methods.getResetPasswordToken = function () {
 
   return resetToken;
 };
-
 const User = mongoose.model("User", userSchema);
-
 module.exports = User;

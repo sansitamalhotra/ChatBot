@@ -23,6 +23,7 @@ router.put('/updateBusinessHours/:id', requireLogin, isAdminOrSuperAdmin, Busine
 router.post('/addSpecialHours', requireLogin, isAdminOrSuperAdmin, BusinessHoursController.addSpecialHours);
 router.post('/addHoliday', requireLogin, isAdminOrSuperAdmin, BusinessHoursController.addHoliday);
 router.get('/fetchForthComingSchedule', requireLogin, isAdminOrSuperAdmin, BusinessHoursController.fetchForthComingSchedule);
+router.get('/holidaysMoreThan30Days', requireLogin, isAdminOrSuperAdmin, BusinessHoursController.holidaysMoreThan30Days);
 
 // Default Business Hours API Routes
 router.post('/addDefaultBusinessHoursConfiguration', requireLogin, isAdminOrSuperAdmin, BusinessHoursController.addDefaultBusinessHoursConfiguration);

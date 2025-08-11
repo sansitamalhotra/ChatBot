@@ -40,24 +40,18 @@ import { SidebarOpen } from 'lucide-react';
 
 
 const ManageAdminJobTestCountries = () => {
-  const canonicalUrl = window.location.href; // Get the current URL/ =========================================
-
+  const canonicalUrl = window.location.href; 
   const [isProBannerVisible, setIsProBannerVisible] = useState(true);
-
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
   const [messageDropdownOpen, setMessageDropdownOpen] = useState(false);
-
   const toggleProfileDropdown = () => {
     setProfileDropdownOpen(!profileDropdownOpen);
     if (messageDropdownOpen) setMessageDropdownOpen(false);
   };
-
   const toggleMessageDropdown = () => {
     setMessageDropdownOpen(!messageDropdownOpen);
     if (profileDropdownOpen) setProfileDropdownOpen(false);
   };
-
-
   useEffect(() => {
     // Initialize all custom JS functionality
     initOffCanvas();
@@ -272,8 +266,8 @@ const handleSubmit = async (e) => {
       <div className="container-scroller">
         <Helmet>
           <link rel="canonical" href={canonicalUrl} />
-          <title>Admin Manage Countries | ThinkBeyond</title>
-          <meta name="description" content="Admin Manage Countries | ThinkBeyond" />
+          <title>Admin Manage Countries | ProsoftSynergies</title>
+          <meta name="description" content="Admin Manage Countries | ProsoftSynergies" />
         </Helmet>
         <Navbar 
           toggleMinimize={toggleMinimize} 

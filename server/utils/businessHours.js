@@ -1,4 +1,4 @@
-// utils/businessHours.js
+// utils/businessHours.js - FIXED VERSION
 const moment = require('moment-timezone');
 const BusinessHours = require('../models/businessHoursModel');
 
@@ -16,7 +16,7 @@ class BusinessHoursUtil {
   }
 
   /**
-   * Get cached data or fetch fresh
+   * Get cached data or fetch fresh - FIXED to return full Mongoose document
    */
   async getCachedBusinessHours() {
     const cacheKey = 'active_business_hours';
@@ -26,7 +26,28 @@ class BusinessHoursUtil {
       return cached.data;
     }
 
-    const businessHours = await BusinessHours.getActive();
+    // FIXED: Use findOne directly instead of getActive() to ensure we get a full document
+    const businessHours = await BusinessHours.findOne({ isActive: true });
+    this.cache.set(cacheKey, {
+      data: businessHours,
+      timestamp: Date.now()
+    });
+
+    return businessHours;
+  }
+
+  /**
+   * Get cached lean document for read-only operations (better performance)
+   */
+  async getCachedBusinessHoursLean() {
+    const cacheKey = 'active_business_hours_lean';
+    const cached = this.cache.get(cacheKey);
+    
+    if (cached && (Date.now() - cached.timestamp < this.cacheTimeout)) {
+      return cached.data;
+    }
+
+    const businessHours = await BusinessHours.findOne({ isActive: true }).lean();
     this.cache.set(cacheKey, {
       data: businessHours,
       timestamp: Date.now()
@@ -99,18 +120,32 @@ class BusinessHoursUtil {
   }
 
   /**
-   * Get minutes until closing
+   * Get minutes until closing - OPTIMIZED to use lean document
    */
   async getMinutesUntilClosing() {
     try {
-      const businessHours = await this.getCachedBusinessHours();
-      if (!businessHours || !businessHours.isCurrentlyOpen()) return 0;
+      // Use lean document for read-only operation
+      const businessHours = await this.getCachedBusinessHoursLean();
+      if (!businessHours) return 0;
 
-      const moment = require('moment-timezone');
+      // Check if currently open using lean document logic
       const now = moment().tz(businessHours.timezone);
+      const currentTime = now.format('HH:mm');
+      const currentDay = now.format('dddd').toLowerCase();
       const currentDate = now.format('YYYY-MM-DD');
       
-      // Check for special hours first
+      // Check if it's a holiday
+      const isHoliday = businessHours.holidays.some(holiday => {
+        if (holiday.recurring) {
+          const holidayDate = moment(holiday.date);
+          return now.format('MM-DD') === holidayDate.format('MM-DD');
+        }
+        return moment(holiday.date).format('YYYY-MM-DD') === currentDate;
+      });
+      
+      if (isHoliday) return 0;
+      
+      // Check for special hours
       const specialHour = businessHours.specialHours.find(sh => 
         moment(sh.date).format('YYYY-MM-DD') === currentDate
       );
@@ -118,9 +153,18 @@ class BusinessHoursUtil {
       let endHour, endMinute;
       if (specialHour && !specialHour.isClosed && specialHour.hours && specialHour.hours.end) {
         [endHour, endMinute] = specialHour.hours.end.split(':');
-      } else {
+      } else if (businessHours.workingDays.includes(currentDay)) {
         [endHour, endMinute] = businessHours.workingHours.end.split(':');
+      } else {
+        return 0; // Not a working day
       }
+      
+      // Check if currently within hours
+      const isWithinHours = specialHour ? 
+        (currentTime >= specialHour.hours.start && currentTime <= specialHour.hours.end) :
+        (currentTime >= businessHours.workingHours.start && currentTime <= businessHours.workingHours.end);
+        
+      if (!isWithinHours) return 0;
       
       const closingTime = now.clone().hour(parseInt(endHour)).minute(parseInt(endMinute));
       return Math.max(0, closingTime.diff(now, 'minutes'));
@@ -131,14 +175,14 @@ class BusinessHoursUtil {
   }
 
   /**
-   * Check if a specific date/time is within business hours
+   * Check if a specific date/time is within business hours - OPTIMIZED to use lean document
    */
   async isDateTimeWithinBusinessHours(dateTime) {
     try {
-      const businessHours = await this.getCachedBusinessHours();
+      // Use lean document for read-only operation
+      const businessHours = await this.getCachedBusinessHoursLean();
       if (!businessHours) return false;
 
-      const moment = require('moment-timezone');
       const checkTime = moment(dateTime).tz(businessHours.timezone);
       const currentTime = checkTime.format('HH:mm');
       const currentDay = checkTime.format('dddd').toLowerCase();
@@ -198,14 +242,14 @@ class BusinessHoursUtil {
   }
 
   /**
-   * Get outside hours message with user context
+   * Get outside hours message with user context - OPTIMIZED to use lean document
    */
   async getOutsideHoursMessage(user = {}) {
     try {
-      const businessHours = await this.getCachedBusinessHours();
+      // Use lean document for read-only operation
+      const businessHours = await this.getCachedBusinessHoursLean();
       if (!businessHours) return 'We are currently unavailable.';
 
-      const moment = require('moment-timezone');
       const now = moment().tz(businessHours.timezone);
       
       // Check if it's a holiday
@@ -297,7 +341,7 @@ class BusinessHoursUtil {
    */
   async getDetailedStatus() {
     try {
-      const businessHours = await this.getCachedBusinessHours();
+      const businessHours = await this.getCachedBusinessHoursLean();
       
       if (!businessHours) {
         return {
@@ -342,10 +386,11 @@ class BusinessHoursUtil {
 // Create a singleton instance
 const businessHoursUtil = new BusinessHoursUtil();
 
-// Middleware function for Express routes
+// Middleware function for Express routes - FIXED
 const businessHoursMiddleware = async (req, res, next) => {
   try {
-    const businessHours = await BusinessHours.getActive();
+    // Use findOne directly to get full document
+    const businessHours = await BusinessHours.findOne({ isActive: true });
     
     req.businessHours = businessHours;
     req.businessHoursStatus = await businessHoursUtil.getDetailedStatus();
