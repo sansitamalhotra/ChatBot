@@ -54,6 +54,7 @@
     text-decoration: none;
     font-size: 14px;
     transition: color 0.3s;
+    line-height: 1.4;
   }
   
   .footer-column a:hover {
@@ -178,6 +179,7 @@
     justify-content: flex-start;
     grid-row: 3;
     align-self: end;
+    font-family: "Titillium Web", sans-serif !important;
   }
 
   .office-hours-horizontal.continuation {
@@ -186,6 +188,7 @@
     margin-top: 0;
     grid-row: 3;
     align-self: end;
+    font-family: "Titillium Web", sans-serif !important;
   }
 
   .office-hours-horizontal h3 {
@@ -195,26 +198,29 @@
     color: white;
     text-transform: uppercase;
     letter-spacing: 0.5px;
+    font-family: "Titillium Web", sans-serif !important;
   }
 
   .office-horizontal-item {
-    margin-bottom: 15px;
+    margin-bottom: 8px;
   }
 
   .office-horizontal-header {
-    margin-bottom: 10px;
+    margin-bottom: 8px;
   }
 
   .office-horizontal-header h4 {
     color: white;
     font-size: 14px;
     font-weight: bold;
-    margin: 0 0 5px 0;
+    margin: 0 0 8px 0;
     text-transform: uppercase;
     letter-spacing: 0.5px;
+    font-family: "Titillium Web", sans-serif !important;
+    line-height: 1.4;
   }
 
-  .status-badge {
+  .footer-status-badge {
     display: inline-block;
     padding: 2px 6px;
     font-size: 10px;
@@ -222,46 +228,94 @@
     text-transform: uppercase;
     border-radius: 2px;
     margin-top: 2px;
+    font-family: "Titillium Web", sans-serif !important;
   }
 
-  .status-badge.open {
+  .footer-status-badge.open {
     background-color: #28a745;
     color: white;
   }
 
-  .status-badge.closed {
+  .footer-status-badge.closed {
     background-color: #dc3545;
     color: white;
   }
 
   .office-horizontal-details {
     color: white;
+    font-family: "Titillium Web", sans-serif !important;
+    margin-bottom: 8px;
   }
 
   .office-horizontal-details p {
-    margin: 5px 0;
+    margin: 0 0 8px 0;
     font-size: 14px;
     line-height: 1.4;
+    color: white;
+    font-family: "Titillium Web", sans-serif !important;
+    transition: color 0.3s;
+  }
+
+  .office-horizontal-details p:hover {
+    color: #cccccc;
   }
 
   .office-horizontal-details strong {
     font-weight: bold;
     color: white;
+    font-family: "Titillium Web", sans-serif !important;
   }
 
   .loading-offices {
     color: white;
     font-size: 14px;
+    line-height: 1.4;
+    font-family: "Titillium Web", sans-serif !important;
+    transition: color 0.3s;
+  }
+
+  .loading-offices:hover {
+    color: #cccccc;
+  }
+
+  .loading-offices p {
+    margin: 0 0 8px 0;
+    font-size: 14px;
+    line-height: 1.4;
+    color: white;
+    font-family: "Titillium Web", sans-serif !important;
+    transition: color 0.3s;
+  }
+
+  .loading-offices p:hover {
+    color: #cccccc;
   }
 
   .no-hours,
   .no-offices {
     color: white;
     font-size: 14px;
+    font-family: "Titillium Web", sans-serif !important;
+    margin: 0 0 8px 0;
+    line-height: 1.4;
+    transition: color 0.3s;
+  }
+
+  .no-hours:hover,
+  .no-offices:hover {
+    color: #cccccc;
   }
 
   .no-offices p {
-    margin: 0;
+    margin: 0 0 8px 0;
+    font-size: 14px;
+    line-height: 1.4;
+    font-family: "Titillium Web", sans-serif !important;
+    transition: color 0.3s;
+  }
+
+  .no-offices p:hover {
+    color: #cccccc;
   }
 
   /* Responsive adjustments for horizontal layout */

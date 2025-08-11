@@ -270,7 +270,7 @@ const Footer = () => {
                     <div className="office-horizontal-header">
                       <h4>{offices[0]?.location.city.toUpperCase()}, {offices[0]?.location.country.toUpperCase()}</h4>
                       {offices[0]?.businessHours && (
-                        <span className={`status-badge ${officeStatuses[offices[0]?._id]?.isOpen ? 'open' : 'closed'}`}>
+                        <span className={`footer-status-badge ${officeStatuses[offices[0]?._id]?.isOpen ? 'open' : 'closed'}`}>
                           {officeStatuses[offices[0]?._id]?.isOpen ? 'OPEN' : 'CLOSED'}
                         </span>
                       )}
@@ -372,7 +372,7 @@ const Footer = () => {
                     <div className="office-horizontal-header">
                       <h4>{offices[1]?.location.city.toUpperCase()}, {offices[1]?.location.country.toUpperCase()}</h4>
                       {offices[1]?.businessHours && (
-                        <span className={`status-badge ${officeStatuses[offices[1]?._id]?.isOpen ? 'open' : 'closed'}`}>
+                        <span className={`footer-status-badge ${officeStatuses[offices[1]?._id]?.isOpen ? 'open' : 'closed'}`}>
                           {officeStatuses[offices[1]?._id]?.isOpen ? 'OPEN' : 'CLOSED'}
                         </span>
                       )}
@@ -409,7 +409,7 @@ const Footer = () => {
                     <div className="office-horizontal-header">
                       <h4>{offices[2]?.location.city.toUpperCase()}, {offices[2]?.location.country.toUpperCase()}</h4>
                       {offices[2]?.businessHours && (
-                        <span className={`status-badge ${officeStatuses[offices[2]?._id]?.isOpen ? 'open' : 'closed'}`}>
+                        <span className={`footer-status-badge ${officeStatuses[offices[2]?._id]?.isOpen ? 'open' : 'closed'}`}>
                           {officeStatuses[offices[2]?._id]?.isOpen ? 'OPEN' : 'CLOSED'}
                         </span>
                       )}

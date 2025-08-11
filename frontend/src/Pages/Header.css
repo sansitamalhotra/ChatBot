@@ -1422,13 +1422,15 @@ body.menu-open {
 }
 
 .office-status.open {
-  background-color: #28a745;
-  color: #03294f;
+  border: 2px solid #28a745;
+  /* background-color: #28a745; */
+  color: #28a745;
 }
 
 .office-status.closed {
-  background-color: #dc3545;
-  color: #03294f;
+  border: 2px solid #dc3545;
+  /* background-color: #dc3545; */
+  color: #dc3545;
 }
 
 .office-hours {
