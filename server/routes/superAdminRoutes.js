@@ -1,6 +1,6 @@
 const express = require("express");
 const router = express.Router();
-const {    
+const {
     requireLogin,
     isSuperAdmin,
   } = require("../middlewares/authMiddleware.js");
@@ -19,7 +19,7 @@ router.get("/fetchRegisteredUsers", requireLogin, isSuperAdmin, fetchRegisteredU
 
 // Route to Fetch Registered User By Id From Admin Dashboard
 router.get("/fetchRegisteredUserById/:id", requireLogin, isSuperAdmin, fetchRegisteredUserById);
-router.get("/applicantAppliedJobs", fetchAllAppliedJobsByApplicants);
+router.get("/AppliedJobs", requireLogin, isSuperAdmin, fetchAllAppliedJobsByApplicants);
 router.get("/fetchRegUsers", fetchRegisteredUsers);
 
 // Route to Fetch Admins For Live status & sessions Update

@@ -11,7 +11,8 @@ const {
     isAuthorized, 
     isUserAdmin, 
     isUserRecruiter, 
-    isUser 
+    isUser, 
+    isAdminOrSuperAdmin
 } = require("../middlewares/authMiddleware");
 
 const { 
@@ -56,7 +57,7 @@ router.get("/fetchAllFiles", fetchAllFiles);
 router.get("/fetchCountries", fetchCountriesForJobPost);
 router.get("/provinces/:countryId", fetchProvincesForJobPost);
 router.get("/cities/:provinceId", fetchCitiesForJobPost);
-router.get("/fetchJobsByRecruiter/:userId", requireLogin, isAdmin, fetchJobsByRecruiter);
+router.get("/fetchJobsByRecruiter/:userId", requireLogin, isAdminOrSuperAdmin, fetchJobsByRecruiter);
 router.get("/job-details/:slug", fetchJobByIdController);
 router.get("/job/:slug", fetchSingleJobController);
 router.get("/jobFile/:jid", fetchJobFileController);

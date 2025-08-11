@@ -26,7 +26,6 @@ const Footer = () => {
       {position: "top-center", autoClose: 20000, closeOnClick: true, pauseOnHover: true, theme: "light" });
 
 
-    
   const handleLogout = () => {
       setAuth({ ...auth, user: null, token: "" });
       localStorage.removeItem("userAuthDetails");
