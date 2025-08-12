@@ -16,6 +16,7 @@ import './Footer.css';
 const Footer = () => {
   const currentDay = new Date();
   const currentYear = currentDay.getFullYear();
+  let officeIndex = 0; // To display offices in the
 
   // ***************************************
   const [auth, setAuth] = useAuth();
@@ -62,7 +63,6 @@ const Footer = () => {
           setOffices(response.data.offices);
           // Calculate office statuses
           updateOfficeStatuses(response.data.offices);
-          console.log("Offices fetched successfully:", response.data.offices);
         }
       } catch (error) {
         console.error("Error fetching offices:", error);
@@ -257,6 +257,40 @@ const Footer = () => {
                 )}
                 {/* ******************************************* */}
               </ul>
+
+              {/* Office Hours Section - First Office */}
+              <div className="office-hours-horizontal">
+                <h3>OFFICE HOURS</h3>
+                {loadingOffices && offices.length > 0 ? (
+                  <div className="loading-offices">
+                    <p>Loading office information...</p>
+                  </div>
+                ) : offices.length > 0 ? (
+                  <div className="office-horizontal-item">
+                    <div className="office-horizontal-header">
+                      <h4>{offices[0]?.location.city.toUpperCase()}, {offices[0]?.location.country.toUpperCase()}</h4>
+                      {offices[0]?.businessHours && (
+                        <span className={`status-badge ${officeStatuses[offices[0]?._id]?.isOpen ? 'open' : 'closed'}`}>
+                          {officeStatuses[offices[0]?._id]?.isOpen ? 'OPEN' : 'CLOSED'}
+                        </span>
+                      )}
+                    </div>
+                    {offices[0]?.businessHours ? (
+                      <div className="office-horizontal-details">
+                        <p><strong>Hours:</strong> {formatWorkingDays(offices[0].businessHours.workingDays)}, {offices[0].businessHours.formattedHours || `${offices[0].businessHours.workingHours?.start || '9:00 AM'} - ${offices[0].businessHours.workingHours?.end || '5:30 PM'}`}</p>
+                        <p><strong>Current Time:</strong> {officeStatuses[offices[0]?._id]?.currentTime}</p>
+                        <p><strong>Timezone:</strong> {offices[0].businessHours?.timezone ? offices[0].businessHours.timezone : 'No timezone specified'}</p>
+                      </div>
+                    ) : (
+                      <p className="no-hours">Business hours not available</p>
+                    )}
+                  </div>
+                ) : (
+                  <div className="no-offices">
+                    <p>No office information available.</p>
+                  </div>
+                )}
+              </div>
             </div>
 
             <div className="footer-column">
@@ -330,6 +364,31 @@ const Footer = () => {
                 )}
                 {/* ******************************************* */}
               </ul>
+
+              {/* Second Office */}
+              {offices.length > 1 && (
+                <div className="office-hours-horizontal continuation">
+                  <div className="office-horizontal-item">
+                    <div className="office-horizontal-header">
+                      <h4>{offices[1]?.location.city.toUpperCase()}, {offices[1]?.location.country.toUpperCase()}</h4>
+                      {offices[1]?.businessHours && (
+                        <span className={`status-badge ${officeStatuses[offices[1]?._id]?.isOpen ? 'open' : 'closed'}`}>
+                          {officeStatuses[offices[1]?._id]?.isOpen ? 'OPEN' : 'CLOSED'}
+                        </span>
+                      )}
+                    </div>
+                    {offices[1]?.businessHours ? (
+                      <div className="office-horizontal-details">
+                        <p><strong>Hours:</strong> {formatWorkingDays(offices[1].businessHours.workingDays)}, {offices[1].businessHours.formattedHours || `${offices[1].businessHours.workingHours?.start || '8:30 AM'} - ${offices[1].businessHours.workingHours?.end || '7:00 PM'}`}</p>
+                        <p><strong>Current Time:</strong> {officeStatuses[offices[1]?._id]?.currentTime}</p>
+                        <p><strong>Timezone:</strong> {offices[1].businessHours.timezone?.includes('Asia') ? 'Asia/Kolkata' : offices[1].businessHours.timezone}</p>
+                      </div>
+                    ) : (
+                      <p className="no-hours">Business hours not available</p>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="footer-column">
@@ -342,6 +401,41 @@ const Footer = () => {
                   <Link to="/Behavioral-Health-Credentialing-&-Contracting">Behavioral Health Credentialing & Contracting</Link>
                 </li>
               </ul>
+
+              {/* Third Office - Leander */}
+              {offices.length > 2 && (
+                <div className="office-hours-horizontal continuation">
+                  <div className="office-horizontal-item">
+                    <div className="office-horizontal-header">
+                      <h4>{offices[2]?.location.city.toUpperCase()}, {offices[2]?.location.country.toUpperCase()}</h4>
+                      {offices[2]?.businessHours && (
+                        <span className={`status-badge ${officeStatuses[offices[2]?._id]?.isOpen ? 'open' : 'closed'}`}>
+                          {officeStatuses[offices[2]?._id]?.isOpen ? 'OPEN' : 'CLOSED'}
+                        </span>
+                      )}
+                    </div>
+                    {offices[1]?.businessHours ? (
+                      <div className="office-horizontal-details">
+                        <p><strong>Hours:</strong> {formatWorkingDays(offices[2].businessHours.workingDays)}, {offices[2].businessHours.formattedHours || `${offices[2].businessHours.workingHours?.start || '8:30 AM'} - ${offices[2].businessHours.workingHours?.end || '7:00 PM'}`}</p>
+                        <p><strong>Current Time:</strong> {officeStatuses[offices[2]?._id]?.currentTime}</p>
+                        <p><strong>Timezone:</strong> {offices[2].businessHours?.timezone ? offices[2].businessHours.timezone : 'No timezone specified'}</p>
+                      </div>
+                    ) : (
+                      <p className="no-hours">Business hours not available</p>
+                    )}
+                  </div>
+                </div>
+              )}
+              {/* <div className="office-hours-horizontal continuation">
+                <div className="office-horizontal-item">
+                  <div className="office-horizontal-header">
+                    <h4>LEANDER, US</h4>
+                  </div>
+                  <div className="office-horizontal-details">
+                    <p>Business hours not available</p>
+                  </div>
+                </div>
+              </div> */}
             </div>
 
             <div className="footer-column">
@@ -352,82 +446,7 @@ const Footer = () => {
                 <li><Link to="/Our-Locations">Locations</Link></li>
                 <li><Link to="/ThinkBeyond-Privacy-Policy">Privacy Policy</Link></li>
               </ul>
-            </div>
-          </div>
-
-          <div className="office-hours-section">
-            <h4>Office Hours</h4>
-            {loadingOffices ? (
-              <div className="loading-offices">
-                <p>Loading office information...</p>
-              </div>
-            ) : offices.length > 0 ? (
-              <div className="offices-list">
-                {offices.map((office) => ( 
-                  <div key={office._id} className="office-item">
-                    <div className="office-header">
-                      <h5 className="office-location">
-                        {office.location.city}, {office.location.country}
-                      </h5>
-                      {office.businessHours && (
-                        <span className={`office-status ${officeStatuses[office._id]?.isOpen ? 'open' : 'closed'}`}>
-                          {officeStatuses[office._id]?.isOpen ? '🟢 Open' : '🔴 Closed'}
-                        </span>
-                      )}
-                    </div>
-
-                    {office.businessHours ? (
-                      <div className="office-details">
-                        <div className="business-hours">
-                          <strong>Hours:</strong> {formatWorkingDays(office.businessHours.workingDays)}
-                          {office.businessHours.formattedHours ?
-                            `, ${office.businessHours.formattedHours}` :
-                            `, ${office.businessHours.workingHours?.start || '9:00'} - ${office.businessHours.workingHours?.end || '17:00'}`
-                          }
-                        </div>
-                        <div className="current-time">
-                          <strong>Current Time:</strong> {officeStatuses[office._id]?.currentTime}
-                        </div>
-                        {office.businessHours.timezone && (
-                          <div className="timezone">
-                            <strong>Timezone:</strong> {office.businessHours.timezone}
-                          </div>
-                        )}
-                      </div>
-                    ) : (
-                      <div className="no-hours">Business hours not available</div>
-                    )}
-
-                    {(office.phone || office.email) && (
-                      <div className="contact-info">
-                        {office.phone && (
-                          <div className="phone">
-                            <strong>Phone:</strong> <a href={`tel:${office.phone}`}>{office.phone}</a>
-                          </div>
-                        )}
-                        {office.email && (
-                          <div className="email">
-                            <strong>Email:</strong> <a href={`mailto:${office.email}`}>{office.email}</a>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                ))}
-
-                {offices.length > 3 && (
-                  <div className="view-all-offices">
-                    <Link to="/Our-Locations" className="view-all-link">
-                      View all {offices.length} offices →
-                    </Link>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div className="no-offices">
-                <p>No office information available at the moment.</p>
-              </div>
-            )}
+            </div>            
           </div>
 
           <div className="footer-bottom">
