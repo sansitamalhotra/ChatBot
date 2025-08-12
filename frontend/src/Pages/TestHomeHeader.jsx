@@ -22,6 +22,9 @@ const TestHomeHeader = () => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [activeDropdown, setActiveDropdown] = useState(null);
   const [isSticky, setIsSticky] = useState(false);
+  const [offices, setOffices] = useState([]);
+  const [officeStatuses, setOfficeStatuses] = useState({});
+  const [loadingOffices, setLoadingOffices] = useState(true);
 
   const [auth] = useAuth();
   const [user, setUser] = useState({});
@@ -37,6 +40,128 @@ const TestHomeHeader = () => {
     window.addEventListener('scroll', handleScroll);
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
+
+    useEffect(() => {
+      const fetchOffices = async () => {
+        try {
+          setLoadingOffices(true);
+          const response = await API.get("/api/v1/offices/fetchAllOffices");
+          if (response.data.success) {
+            setOffices(response.data.offices);
+            // Calculate office statuses
+            updateOfficeStatuses(response.data.offices);
+            console.log("Offices fetched successfully:", response.data.offices);
+          }
+        } catch (error) {
+          console.error("Error fetching offices:", error);
+        } finally {
+          setLoadingOffices(false);
+        }
+      };
+  
+      fetchOffices();
+  
+      // Update office statuses every minute
+      const interval = setInterval(() => {
+        if (offices.length > 0) {
+          updateOfficeStatuses(offices);
+        }
+      }, 60000);
+  
+      return () => clearInterval(interval);
+    }, []);
+  
+    // Helper function to check if office is currently open
+    const isOfficeOpen = (businessHours) => {
+      if (!businessHours) return false;
+  
+      try {
+        const now = new Date();
+        const officeTime = new Intl.DateTimeFormat('en-US', {
+          timeZone: businessHours.timezone,
+          weekday: 'long',
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: false
+        }).formatToParts(now);
+  
+        const currentDay = officeTime.find(part => part.type === 'weekday').value.toLowerCase();
+        const currentHour = parseInt(officeTime.find(part => part.type === 'hour').value);
+        const currentMinute = parseInt(officeTime.find(part => part.type === 'minute').value);
+        const currentTime = currentHour * 60 + currentMinute; // Convert to minutes
+  
+        // Check if current day is in working days
+        if (!businessHours.workingDays?.includes(currentDay)) {
+          return false;
+        }
+  
+        // Check for holidays
+        const today = now.toISOString().split('T')[0]; // YYYY-MM-DD format
+        if (businessHours.holidays?.some(holiday => holiday.date === today)) {
+          return false;
+        }
+  
+        // Parse working hours
+        const [startHour, startMin] = businessHours.workingHours.start.split(':').map(Number);
+        const [endHour, endMin] = businessHours.workingHours.end.split(':').map(Number);
+        const startTime = startHour * 60 + startMin;
+        const endTime = endHour * 60 + endMin;
+  
+        return currentTime >= startTime && currentTime <= endTime;
+      } catch (error) {
+        console.error('Error checking office hours:', error);
+        return false;
+      }
+    };
+  
+    // Helper function to format working days
+    const formatWorkingDays = (workingDays) => {
+      if (!workingDays || workingDays.length === 0) return 'Hours not available';
+  
+      const dayMap = {
+        monday: 'Mon', tuesday: 'Tue', wednesday: 'Wed',
+        thursday: 'Thu', friday: 'Fri', saturday: 'Sat', sunday: 'Sun'
+      };
+  
+      if (workingDays.length === 5 &&
+        workingDays.includes('monday') &&
+        workingDays.includes('friday') &&
+        !workingDays.includes('saturday') &&
+        !workingDays.includes('sunday')) {
+        return 'Mon - Fri';
+      } else if (workingDays.length === 6 && !workingDays.includes('sunday')) {
+        return 'Mon - Sat';
+      } else if (workingDays.length === 7) {
+        return 'Mon - Sun';
+      } else {
+        return workingDays.map(day => dayMap[day] || day).join(', ');
+      }
+    };
+
+    // Helper function to format time from 24-hour to 12-hour format
+    const formatTime = (time) => {
+      if (!time) return '';
+      const [hours, minutes] = time.split(':');
+      const hour = parseInt(hours);
+      const ampm = hour >= 12 ? 'PM' : 'AM';
+      const displayHour = hour % 12 || 12;
+      return `${displayHour}:${minutes} ${ampm}`;
+    };
+  
+    // Update office statuses
+    const updateOfficeStatuses = (officesData) => {
+      const statuses = {};
+      officesData.forEach(office => {
+        if (office.businessHours) {
+          statuses[office._id] = {
+            isOpen: isOfficeOpen(office.businessHours),
+            formattedHours: office.businessHours.formattedHours ||
+              `${formatTime(office.businessHours.workingHours?.start || '9:00')} - ${formatTime(office.businessHours.workingHours?.end || '17:00')}`
+          };
+        }
+      });
+      setOfficeStatuses(statuses);
+    };
 
   const toggleMobileMenu = () => {
     setMobileMenuOpen(!mobileMenuOpen);
@@ -214,6 +339,7 @@ const TestHomeHeader = () => {
 
   return (
     <header className={isSticky ? 'sticky' : ''}>
+
       <div className="top-bar">
         <Link to="mailto:hrpspl@prosoftsynergies.com" target="_blank" className="login-btn info-link">
           <span className="contact-text" style={{ color: "#03294f" }}>Email Us</span>
@@ -223,7 +349,45 @@ const TestHomeHeader = () => {
           <span className="contact-text" style={{ color: "#03294f" }}>Let's Connect On WhatsApp</span>
           <i className='fab fa-whatsapp ms-1 fa-2x' style={{ color: "#03294f" }}></i>
         </Link>
+        
+        {/* Office Hours Marquee */}
+        <div className="office-hours-marquee">
+          <div className="marquee-content">
+            {!loadingOffices && offices.length > 0 && (
+              <div className="marquee-track">
+                {offices.map((office, index) => (
+                  <div key={`${office._id}-${index}`} className="office-item">
+                    <i className="fas fa-map-marker-alt office-icon"></i>
+                    <span className="office-location">{office.location.city}, {office.location.country}</span>
+                    <span className="office-separator">|</span>
+                    <span className={`office-status ${officeStatuses[office._id]?.isOpen ? 'open' : 'closed'}`}>
+                      {officeStatuses[office._id]?.isOpen ? 'OPEN' : 'CLOSED'}
+                    </span>
+                    <span className="office-separator">|</span>
+                    <span className="office-hours">
+                      {office.businessHours ? (
+                        office.businessHours.formattedHours ||
+                        `${formatTime(office.businessHours.workingHours?.start || '9:00')} - ${formatTime(office.businessHours.workingHours?.end || '17:00')}`
+                      ) : 'Hours not available'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {loadingOffices && (
+              <div className="marquee-loading">
+                <span>Loading office information...</span>
+              </div>
+            )}
+            {!loadingOffices && offices.length === 0 && (
+              <div className="marquee-no-data">
+                <span>No office information available</span>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
+
       <nav className={`main-nav ${isSticky ? 'sticky' : ''}`}>
         <div className="PSPL-Logo logo">
           <Link to="/"><img src={Logo} alt='ProsoftSynergies' /></Link>
