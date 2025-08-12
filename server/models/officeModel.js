@@ -15,7 +15,6 @@ const officeSchema = new mongoose.Schema({
   businessHours: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'BusinessHours',
-    ref: 'BusinessHours',
     required: false // Optional for now
   }
 });
