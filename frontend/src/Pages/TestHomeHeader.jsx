@@ -364,6 +364,10 @@ const TestHomeHeader = () => {
                       {officeStatuses[office._id]?.isOpen ? 'OPEN' : 'CLOSED'}
                     </span>
                     <span className="office-separator">|</span>
+                    <span className="office-working-days">
+                      {office.businessHours ? formatWorkingDays(office.businessHours.workingDays) : 'Working days not available'}
+                    </span>
+                    <span className="office-separator">|</span>
                     <span className="office-hours">
                       {office.businessHours ? (
                         office.businessHours.formattedHours ||
