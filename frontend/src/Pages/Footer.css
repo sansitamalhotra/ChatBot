@@ -14,10 +14,11 @@
   }
   
   .footer-columns {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: space-between;
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 20px;
     margin-bottom: 10px;
+    align-items: start;
   }
   
   .footer-column {
@@ -158,211 +159,178 @@
     }
   }
 
-  /* Office Hours Section Styles */
-  .office-hours-section {
-    background-color: #1a1a1a;
-    padding: 30px 20px;
-    margin-top: 30px;
+  @media (min-width: 769px) {
+    .footer-columns {
+      align-items: stretch;
+    }
+    
+    .footer-column {
+      min-height: 300px;
+    }
+  }
+
+  /* Horizontal Office Hours Styles */
+  .office-hours-horizontal {
+    margin-top: 15px;
+    padding-top: 20px;
     border-top: 1px solid #333;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+    grid-row: 3;
+    align-self: end;
     font-family: "Titillium Web", sans-serif !important;
   }
 
-  .office-hours-section h4 {
+  .office-hours-horizontal.continuation {
+    border-top: none;
+    padding-top: 20px;
+    margin-top: 0;
+    grid-row: 3;
+    align-self: end;
+    font-family: "Titillium Web", sans-serif !important;
+  }
+
+  .office-hours-horizontal h3 {
+    font-size: 14px;
+    font-weight: bold;
+    margin-bottom: 15px;
+    color: white;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-family: "Titillium Web", sans-serif !important;
+  }
+
+  .office-horizontal-item {
+    margin-bottom: 8px;
+  }
+
+  .office-horizontal-header {
+    margin-bottom: 8px;
+  }
+
+  .office-horizontal-header h4 {
     color: white;
     font-size: 14px;
     font-weight: bold;
-    margin-bottom: 20px;
-    text-align: left;
+    margin: 0 0 8px 0;
     text-transform: uppercase;
     letter-spacing: 0.5px;
+    font-family: "Titillium Web", sans-serif !important;
+    line-height: 1.4;
+  }
+
+  .footer-status-badge {
+    display: inline-block;
+    padding: 2px 6px;
+    font-size: 10px;
+    font-weight: bold;
+    text-transform: uppercase;
+    border-radius: 2px;
+    margin-top: 2px;
+    font-family: "Titillium Web", sans-serif !important;
+  }
+
+  .footer-status-badge.open {
+    background-color: #28a745;
+    color: white;
+  }
+
+  .footer-status-badge.closed {
+    background-color: #dc3545;
+    color: white;
+  }
+
+  .office-horizontal-details {
+    color: white;
+    font-family: "Titillium Web", sans-serif !important;
+    margin-bottom: 8px;
+  }
+
+  .office-horizontal-details p {
+    margin: 0 0 8px 0;
+    font-size: 14px;
+    line-height: 1.4;
+    color: white;
+    font-family: "Titillium Web", sans-serif !important;
+    transition: color 0.3s;
+  }
+
+  .office-horizontal-details p:hover {
+    color: #cccccc;
+  }
+
+  .office-horizontal-details strong {
+    font-weight: bold;
+    color: white;
+    font-family: "Titillium Web", sans-serif !important;
   }
 
   .loading-offices {
     color: white;
     font-size: 14px;
-    text-align: left;
+    line-height: 1.4;
+    font-family: "Titillium Web", sans-serif !important;
+    transition: color 0.3s;
   }
 
-  .offices-list {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 30px;
-    justify-content: flex-start;
+  .loading-offices:hover {
+    color: #cccccc;
   }
 
-  .office-item {
-    flex: 1;
-    min-width: 200px;
-    max-width: 300px;
-    padding: 0;
-    background: none;
-    border: none;
-    border-radius: 0;
-  }
-
-  .office-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 10px;
-    padding-bottom: 0;
-    border-bottom: none;
-  }
-
-  .office-location {
-    color: white;
-    font-size: 14px;
-    font-weight: bold;
-    margin: 0;
-    text-transform: uppercase;
-  }
-
-  .office-status {
-    padding: 2px 6px;
-    border-radius: 3px;
-    font-size: 11px;
-    font-weight: normal;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-  }
-
-  .office-status.open {
-    background-color: transparent;
-    color: #28a745;
-    border: 1px solid #28a745;
-  }
-
-  .office-status.closed {
-    background-color: transparent;
-    color: #dc3545;
-    border: 1px solid #dc3545;
-  }
-
-  .office-details {
-    margin-bottom: 10px;
-  }
-
-  .office-details > div {
-    margin-bottom: 6px;
-    color: white;
+  .loading-offices p {
+    margin: 0 0 8px 0;
     font-size: 14px;
     line-height: 1.4;
-  }
-
-  .office-details strong {
-    font-weight: bold;
     color: white;
+    font-family: "Titillium Web", sans-serif !important;
+    transition: color 0.3s;
   }
 
-  .business-hours,
-  .current-time,
-  .timezone {
-    color: white;
-  }
-
-  .contact-info {
-    border-top: none;
-    padding-top: 5px;
-  }
-
-  .contact-info > div {
-    margin-bottom: 6px;
-    color: white;
-    font-size: 14px;
-  }
-
-  .contact-info strong {
-    color: white;
-    font-weight: bold;
-  }
-
-  .contact-info a {
-    color: white;
-    text-decoration: none;
-    transition: color 0.3s ease;
-  }
-
-  .contact-info a:hover {
+  .loading-offices p:hover {
     color: #cccccc;
-    text-decoration: none;
   }
 
-  .no-hours {
-    color: white;
-    font-size: 14px;
-  }
-
+  .no-hours,
   .no-offices {
     color: white;
     font-size: 14px;
+    font-family: "Titillium Web", sans-serif !important;
+    margin: 0 0 8px 0;
+    line-height: 1.4;
+    transition: color 0.3s;
   }
 
-  .view-all-offices {
-    width: 100%;
-    text-align: left;
-    margin-top: 15px;
-  }
-
-  .view-all-link {
-    color: white;
-    text-decoration: none;
-    font-size: 14px;
-    font-weight: normal;
-    padding: 0;
-    border: none;
-    border-radius: 0;
-    transition: color 0.3s ease;
-    display: inline;
-    background: none;
-  }
-
-  .view-all-link:hover {
-    background-color: transparent;
+  .no-hours:hover,
+  .no-offices:hover {
     color: #cccccc;
-    text-decoration: none;
   }
 
-  /* Responsive Design for Office Hours */
+  .no-offices p {
+    margin: 0 0 8px 0;
+    font-size: 14px;
+    line-height: 1.4;
+    font-family: "Titillium Web", sans-serif !important;
+    transition: color 0.3s;
+  }
+
+  .no-offices p:hover {
+    color: #cccccc;
+  }
+
+  /* Responsive adjustments for horizontal layout */
   @media (max-width: 768px) {
-    .office-hours-section {
-      padding: 20px;
+    .office-hours-horizontal {
+      margin-top: 20px;
+      padding-top: 15px;
+    }
+    
+    .office-horizontal-details p {
+      font-size: 13px;
     }
 
-    .offices-list {
-      flex-direction: column;
-      gap: 20px;
-    }
-
-    .office-item {
-      min-width: 100%;
-      max-width: 100%;
-    }
-
-    .office-header {
-      flex-direction: column;
-      align-items: flex-start;
-      gap: 5px;
-    }
-
-    .office-status {
-      align-self: flex-start;
-    }
-  }
-
-  @media (max-width: 480px) {
-    .office-hours-section h4 {
-      font-size: 14px;
-    }
-
-    .office-location {
-      font-size: 14px;
-    }
-
-    .office-details > div {
-      font-size: 14px;
-    }
-
-    .contact-info > div {
-      font-size: 14px;
+    .office-hours-horizontal.continuation {
+      padding-top: 15px;
+      margin-top: 20px;
     }
   }
