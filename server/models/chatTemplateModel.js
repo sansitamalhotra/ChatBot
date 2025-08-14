@@ -1,4 +1,4 @@
-// server/models/chatTemplateModel.js
+//server/models/chatTemplateModel.js
 const mongoose = require('mongoose');
 const { Schema } = mongoose;
 const escapeHtml = (str) => {

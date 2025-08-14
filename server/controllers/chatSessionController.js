@@ -13,99 +13,172 @@ const { logWithIcon } = require('../services/consoleIcons');
 
 class ChatMessageController {
     // Send message in chat session
-    static async sendMessage(req, res) {
+    static async createChatSession(req, res) {
         try {
-            const { sessionId, message, messageType = 'text', metadata = {} } = req.body;
-            const userId = req.user.id;
-            const userRole = req.user.role || 'user';
+            const { 
+                sessionType = 'bot', 
+                initialMessage = null, 
+                metadata = {}, 
+                guestEmail = null,
+                firstName,
+                lastName,
+                email,
+                phone 
+            } = req.body;
+            
+            const userId = req.user?.id;
+            const isBusinessHours = req.isBusinessHours;
+            let userInfo = {};
+            let guestUserId = null;
 
-            // Validate session
-            const session = await ChatSession.findById(sessionId);
-            if (!session) {
-                return res.status(404).json({
-                    success: false,
-                    message: 'Chat Session NOT FOUND!'
-                });
-            }
-
-            // Check user authorization
-            if (userRole === 'user' && session.userId.toString() !== userId) {
-                return res.status(403).json({
-                    success: false,
-                    message: 'Access Denied to this Chat Session'
-                });
-            }
-
-            if (userRole === 'agent' && session.agentId?.toString() !== req.user.agentId) {
-                return res.status(403).json({
-                    success: false,
-                    message: 'You are not Assigned to this Chat Session'
-                });
-            }
-
-            // Determine sender details
-            const senderInfo = this.determineSenderInfo(userRole, req.user);
-
-            // Sanitize/Truncate Messages if Necessary
-            const trimmed = typeof message === 'string' ? message.trim() : String(message || '');
-
-            // Encrypt Message for Database Storage
-            const { encrypted, encryptedFlag } = encryptionService.encrypt(trimmed);
-
-            // Create message
-            const chatMessage = new ChatMessage({
-                sessionId,
-                senderId: senderInfo.senderId,
-                senderModel: senderInfo.senderModel,
-                senderType: senderInfo.senderType,
-                message: encrypted,
-                messageType,
-                metadata: {
-                    ...metadata,
-                    businessHoursMessage: !req.isBusinessHours,
-                    encrypted: !!encryptedFlag
-                }
+            logWithIcon.info('Creating chat session:', {
+                userId: !!userId,
+                guestEmail,
+                email,
+                firstName
             });
 
-            await chatMessage.save();
+            // Handle authenticated user FIRST
+            if (userId) {
+                const user = await User.findById(userId);
+                if (user) {
+                    userInfo = {
+                        firstName: user.firstname || user.firstName || 'User',
+                        lastName: user.lastname || user.lastName || '',
+                        email: user.email,
+                        phone: user.phone || ''
+                    };
+                    logWithIcon.success('Creating session for authenticated user:', userInfo.email);
+                }
+            } 
+            // Handle guest user ONLY if no authenticated user AND either guestEmail or email is provided
+            else if (guestEmail || email) {
+                const guestEmailToUse = guestEmail || email;
+                
+                if (!guestEmailToUse) {
+                    return res.status(400).json({
+                        success: false,
+                        message: 'Email is required for guest users'
+                    });
+                }
 
-            // Update session last message time
-            session.lastMessageAt = new Date();
+                // Validate required guest fields
+                if (!firstName || !firstName.trim()) {
+                    return res.status(400).json({
+                        success: false,
+                        message: 'First name is required for guest users'
+                    });
+                }
+                
+                let guestUser = await GuestUser.findOne({ email: guestEmailToUse.toLowerCase() });
+                
+                if (!guestUser) {
+                    // Create guest user if it doesn't exist
+                    guestUser = new GuestUser({
+                        firstName: firstName.trim(),
+                        lastName: lastName?.trim() || '',
+                        email: guestEmailToUse.toLowerCase(),
+                        phone: phone?.trim() || ''
+                    });
+                    await guestUser.save();
+                    logWithIcon.success('Created new guest user:', guestUser.email);
+                } else {
+                    // Update existing guest user with latest info
+                    guestUser.firstName = firstName.trim();
+                    if (lastName) guestUser.lastName = lastName.trim();
+                    if (phone) guestUser.phone = phone.trim();
+                    await guestUser.save();
+                    logWithIcon.info('Updated existing guest user:', guestUser.email);
+                }
+                
+                userInfo = {
+                    firstName: guestUser.firstName,
+                    lastName: guestUser.lastName,
+                    email: guestUser.email,
+                    phone: guestUser.phone
+                };
+                guestUserId = guestUser._id;
+                logWithIcon.success('Using guest user for session:', userInfo.email);
+            } else {
+                return res.status(400).json({
+                    success: false,
+                    message: 'User authentication or guest information is required'
+                });
+            }
+
+            // Create session data
+            const sessionData = {
+                userId: userId || null,
+                guestUserId,
+                sessionType,
+                userInfo,
+                status: 'active',
+                createdDuringBusinessHours: isBusinessHours,
+                metadata: {
+                    ...metadata,
+                    userAgent: req.headers?.['user-agent'] || '',
+                    ipAddress: req.ip || req.connection?.remoteAddress || '',
+                    isAuthenticated: !!userId,
+                    isGuest: !userId && !!guestUserId
+                }
+            };
+
+            // Create the session
+            const session = new ChatSession(sessionData);
             await session.save();
 
-            // Update metrics
-            await this.updateMessageMetrics(sessionId, senderInfo.senderType);
-
-            // Handle bot response if needed
-            if (senderInfo.senderType === 'user' && session.sessionType === 'bot') {
-                const botResponse = await this.generateBotResponse(session, message, messageType);
-                if (botResponse) {
-                    // Send bot response after a brief delay to simulate typing
-                    setTimeout(async () => {
-                        await this.sendBotMessage(sessionId, botResponse);
-                    }, 800);
+            // Create metrics for the session
+            const sessionMetrics = new ChatMetrics({
+                sessionId: session._id,
+                userId: userId || null,
+                guestUserId,
+                sessionMetrics: {
+                    startTime: new Date(),
+                    endTime: null,
+                    duration: 0
+                },
+                messageCount: {
+                    total: 0,
+                    userMessages: 0,
+                    agentMessages: 0,
+                    botMessages: 0
                 }
+            });
+            await sessionMetrics.save();
+
+            // Send initial bot message if it's a bot session
+            if (sessionType === 'bot') {
+                await this.sendInitialBotMessage(session, initialMessage);
             }
 
-            // Populate sender information for response
-            await chatMessage.populate('senderId', 'firstname lastname name email');
-
-            // Decrypt Message for outgoing payload
-            const outgoing = chatMessage.toObject();
-            if (outgoing.message && chatMessage.metadata?.encrypted) {
-                outgoing.message = encryptionService.decrypt(outgoing.message);
-            }
+            logWithIcon.success('Chat session created successfully:', {
+                sessionId: session._id,
+                userType: userId ? 'authenticated' : 'guest',
+                userEmail: userInfo.email,
+                firstName: userInfo.firstName
+            });
 
             res.status(201).json({
                 success: true,
-                message: 'Message sent successfully',
-                data: outgoing
+                message: 'Chat session created successfully',
+                data: session
             });
+
         } catch (error) {
-            logWithIcon.error('Error sending message:', error);
+            logWithIcon.error('Error creating chat session:', error);
+            
+            // Handle specific errors
+            if (error.name === 'ValidationError') {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Validation error',
+                    errors: Object.values(error.errors).map(err => err.message)
+                });
+            }
+
             res.status(500).json({
                 success: false,
-                message: 'Error sending message',
+                message: 'Error creating chat session',
                 error: error.message
             });
         }
@@ -528,25 +601,10 @@ class ChatMessageController {
 
     static async generateBotResponse(session, userMessage, messageType) {
         try {
-            // Try selecting a general bot_response template first
-            try {
-                const templates = await require('../services/chatTemplateCache').findByTypeAndCategory('bot_response', 'general', null);
-                if (templates && templates.length > 0) {
-                    // pick highest priority
-                    const tpl = templates[0];
-                    await ChatTemplate.findByIdAndUpdate(tpl._id, { $inc: { 'usage.timesUsed': 1 }, 'usage.lastUsed': new Date() });
-                    const rendered = tpl.render({ firstName: session.userInfo.firstName });
-                    return { message: rendered, messageType: 'text', quickReplies: tpl.quickReplies || [], templateId: tpl._id };
-                }
-            } catch (err) {
-                // fallback to keyword-based responses below
-                console.error('template selection error in generateContextualResponse', err);
-            }
-
             const businessHours = await BusinessHours.getActive();
             const isBusinessHours = businessHours ? businessHours.isCurrentlyOpen() : false;
 
-            // Handle different message types
+            // Handle different message types FIRST
             if (messageType === 'option_selection') {
                 return await this.handleOptionSelection(session, userMessage, isBusinessHours);
             }
@@ -555,7 +613,20 @@ class ChatMessageController {
                 return await this.handleFormData(session, userMessage);
             }
 
-            // Generate contextual response
+            // Then try selecting a general bot_response template
+            try {
+                const templates = await require('../services/chatTemplateCache').findByTypeAndCategory('bot_response', 'general', null);
+                if (templates && templates.length > 0) {
+                    const tpl = templates[0];
+                    await ChatTemplate.findByIdAndUpdate(tpl._id, { $inc: { 'usage.timesUsed': 1 }, 'usage.lastUsed': new Date() });
+                    const rendered = tpl.render({ firstName: session.userInfo.firstName });
+                    return { message: rendered, messageType: 'text', quickReplies: tpl.quickReplies || [], templateId: tpl._id };
+                }
+            } catch (err) {
+                console.error('template selection error in generateContextualResponse', err);
+            }
+
+            // Generate contextual response as fallback
             return await this.generateContextualResponse(session, userMessage, isBusinessHours);
         } catch (error) {
             logWithIcon.error('Error generating bot response:', error);
@@ -567,28 +638,50 @@ class ChatMessageController {
     }
 
     static async handleOptionSelection(session, selectedOption, isBusinessHours) {
-        const templates = await ChatTemplate.findByTypeAndCategory('bot_response', selectedOption);
+        console.log(`Handling option selection: ${selectedOption}`);
+        
+        // First, check for live agent requests
+        if (selectedOption === 'live_agent') {
+            if (!isBusinessHours) {
+                const template = await ChatTemplate.findOne({
+                    templateType: 'outside_hours_message',
+                    category: 'business_hours',
+                    isActive: true
+                });
 
-        if (selectedOption === 'live_agent' && !isBusinessHours) {
-            const template = await ChatTemplate.findOne({
-                templateType: 'outside_hours_message',
-                category: 'business_hours',
-                isActive: true
-            });
-
-            if (template) {
-                const businessHours = await BusinessHours.getActive();
+                if (template) {
+                    const businessHours = await BusinessHours.getActive();
+                    return {
+                        message: template.render({
+                            firstName: session.userInfo.firstName,
+                            nextAvailable: businessHours?.getNextAvailableTime()
+                        }),
+                        messageType: 'outside_hours_notice',
+                        quickReplies: template.quickReplies,
+                        templateId: template._id
+                    };
+                }
+                
+                // Fallback for outside hours
                 return {
-                    message: template.render({
-                        firstName: session.userInfo.firstName,
-                        nextAvailable: businessHours?.getNextAvailableTime()
-                    }),
+                    message: "I'd love to connect you with a live agent, but they're currently unavailable outside business hours. I'm here to help in the meantime!",
                     messageType: 'outside_hours_notice',
-                    quickReplies: template.quickReplies,
-                    templateId: template._id
+                    quickReplies: [
+                        { text: 'Search Jobs', value: 'search_job' },
+                        { text: 'Leave Message', value: 'leave_message' }
+                    ]
                 };
             }
+            
+            // Business hours - transfer to agent
+            return {
+                message: "I'm transferring you to a live agent. Please hold on for a moment.",
+                messageType: 'transfer_notice'
+            };
         }
+
+        // Handle other options
+        const templates = await ChatTemplate.findByTypeAndCategory('bot_response', selectedOption);
 
         if (templates.length > 0) {
             const template = templates[0];
@@ -607,7 +700,10 @@ class ChatMessageController {
             search_job: "I'd be happy to help you search for jobs! You can browse our job listings on the main portal. What type of position are you looking for?",
             partner_pspl: "Great! I can provide information about partnering with PSPL. What specific aspect of partnership are you interested in?",
             application_issue: "I'm here to help with your application. Can you describe the specific issue you're experiencing?",
-            general_inquiry: "I'm here to help! What would you like to know about PSPL?"
+            general_inquiry: "I'm here to help! What would you like to know about PSPL?",
+            upload_resume: "Please upload your resume using the file upload button below.",
+            contact_sales: "I'll connect you with our sales team. Please hold on for a moment.",
+            leave_message: "Please leave your message and a team member will get back to you as soon as possible."
         };
 
         return {
@@ -617,9 +713,8 @@ class ChatMessageController {
     }
 
     static async handleFormData(session, formData) {
-        // Process form submission
         return {
-            message: `Thank you for providing your information, ${session.userInfo.firstName}! I have all the details I need. How else can I help you today?`, // FIXED: Added backticks for template literal
+            message: `Thank you for providing your information, ${session.userInfo.firstName}! I have all the details I need. How else can I help you today?`,
             messageType: 'text',
             quickReplies: [
                 { text: 'Search for jobs', value: 'search_job' },
@@ -690,19 +785,21 @@ class ChatMessageController {
         };
     }
     // Create a new chat session
-    static async createChatSession(req, res) {
+   static async createChatSession(req, res) {
         try {
             const { 
                 sessionType = 'bot', 
-                initialMessage = null,
-                metadata = {},
-                guestEmail = null  // Get guest email from request
+                initialMessage = null, 
+                metadata = {}, 
+                guestEmail = null,
+                firstName,
+                lastName,
+                email,
+                phone 
             } = req.body;
             
             const userId = req.user?.id;
-            const businessHours = req.businessHours;
             const isBusinessHours = req.isBusinessHours;
-
             let userInfo = {};
             let guestUserId = null;
 
@@ -711,27 +808,32 @@ class ChatMessageController {
                 const user = await User.findById(userId);
                 if (user) {
                     userInfo = {
-                        firstName: user.firstname,
-                        lastName: user.lastname,
+                        firstName: user.firstname || user.firstName,
+                        lastName: user.lastname || user.lastName,
                         email: user.email,
-                        phone: user.phone
+                        phone: user.phone || '' // Handle case where phone might not exist
                     };
+                    logWithIcon.info('Creating session for authenticated user:', userInfo);
                 }
             } 
-            // Handle guest user
-            else if (guestEmail) {
-                // Find or create guest user
-                let guestUser = await GuestUser.findOne({ email: guestEmail });
+            // Handle guest user ONLY if no authenticated user AND guestEmail is provided
+            else if (guestEmail || email) {
+                const guestEmailToUse = guestEmail || email;
+                
+                let guestUser = await GuestUser.findOne({ email: guestEmailToUse.toLowerCase() });
                 
                 if (!guestUser) {
-                    // Create new guest user if not found
+                    // Create guest user if it doesn't exist
                     guestUser = new GuestUser({
-                        firstName: metadata.guestFirstName || 'Guest',
-                        lastName: metadata.guestLastName || '',
-                        email: guestEmail,
-                        phone: metadata.guestPhone || ''
+                        firstName: firstName || metadata.guestFirstName || 'Guest',
+                        lastName: lastName || metadata.guestLastName || '',
+                        email: guestEmailToUse.toLowerCase(),
+                        phone: phone || metadata.guestPhone || ''
                     });
                     await guestUser.save();
+                    logWithIcon.success('Created new guest user:', guestUser.firstName);
+                } else {
+                    logWithIcon.info('Using existing guest user:', guestUser);
                 }
                 
                 userInfo = {
@@ -741,19 +843,10 @@ class ChatMessageController {
                     phone: guestUser.phone
                 };
                 guestUserId = guestUser._id;
-            }
-            else {
+            } else {
                 return res.status(400).json({
                     success: false,
-                    message: 'User authentication or guest email required'
-                });
-            }
-
-            // Validate required fields
-            if (!userInfo.email) {
-                return res.status(400).json({
-                    success: false,
-                    message: 'Email is required for chat session'
+                    message: 'User authentication or guest email is required'
                 });
             }
 
@@ -769,11 +862,7 @@ class ChatMessageController {
                     ...metadata,
                     userAgent: req.headers?.['user-agent'] || '',
                     ipAddress: req.ip || req.connection?.remoteAddress || '',
-                    businessHoursAtCreation: businessHours ? {
-                        timezone: businessHours.timezone,
-                        workingHours: businessHours.workingHours,
-                        isOpen: isBusinessHours
-                    } : null
+                    isAuthenticated: !!userId
                 }
             };
 
@@ -781,42 +870,21 @@ class ChatMessageController {
             const session = new ChatSession(sessionData);
             await session.save();
 
-            // Create metrics record
-            const metrics = new ChatMetrics({
-                sessionId: session._id,
-                messageCount: {
-                    total: 0,
-                    userMessages: 0,
-                    agentMessages: 0,
-                    botMessages: 0
-                },
-                sessionMetrics: {
-                    startTime: new Date(),
-                    endTime: null,
-                    duration: 0,
-                    userSatisfactionRating: null
-                }
-            });
-            await metrics.save();
-
             // Send initial bot message if it's a bot session
             if (sessionType === 'bot') {
-                await ChatMessageController.sendInitialBotMessage(session, initialMessage);
+                await this.sendInitialBotMessage(session, initialMessage);
             }
 
-            // Populate user info for response
-            if (userId) {
-                await session.populate('userId', 'firstname lastname email');
-            }
+            logWithIcon.success('Chat session created successfully:', {
+                sessionId: session._id,
+                userType: userId ? 'authenticated' : 'guest',
+                userInfo: userInfo.email
+            });
 
             res.status(201).json({
                 success: true,
                 message: 'Chat session created successfully',
-                data: {
-                    session: session.toObject(),
-                    businessHoursStatus: req.businessHoursStatus,
-                    canStartChat: req.canStartChat
-                }
+                data: session
             });
 
         } catch (error) {
@@ -1045,8 +1113,8 @@ class ChatMessageController {
                         'usage.lastUsed': new Date()
                     });
                 }
-            } catch (templateError) {
-                logWithIcon.error('Error fetching welcome template:', templateError);
+            } catch (error) {
+                logWithIcon.error('Error sending initial bot message:', error);
             }
 
             // Fallback welcome message
@@ -1063,8 +1131,8 @@ class ChatMessageController {
             }
 
             // Use ChatMessageController to send the message
-            const ChatMessageController = require('./chatMessageController');
-            await ChatMessageController.sendBotMessage(session._id, {
+            //const ChatMessageController = require('./chatMessageController');
+            await ChatMessage.sendBotMessage(session._id, {
                 ...welcomeMessage,
                 messageType: 'welcome'
             });

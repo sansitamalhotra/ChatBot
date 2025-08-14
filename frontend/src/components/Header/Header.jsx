@@ -4,7 +4,7 @@ import { NavLink, Link, useNavigate, useLocation } from "react-router-dom";
 import { useDispatch } from "react-redux";
 import { useAuth } from "../../Context/AuthContext";
 
-import { ToastContainer, toast } from 'react-toastify';
+import { toast } from 'react-toastify';
 import "react-toastify/dist/ReactToastify.css";
 
 import  "../../assets/css/bootstrap.min.css";

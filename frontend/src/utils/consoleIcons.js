@@ -17,6 +17,10 @@ const consoleIcons = {
   target: 'fas fa-bullseye',    
   statistics: 'fas fa-chart-bar',
   inbox: 'fas fa-inbox',
+  debug: 'fas fa-bug',
+  emit: 'fas fa-upload',
+  guest: 'fas fa-user-secret',
+  initChat: 'fas fa-envelope-open-text',
   
   // User status icons
   user: 'fas fa-user',                      
@@ -67,8 +71,11 @@ const logWithIcon = {
   clipboard: (message) => console.log(`📋 ${message}`),
   target: (message) => console.log(`🎯 ${message}`),
   statistics: (message) => console.log(`📊 ${message}`), 
-  inbox: (message) => console.log(`📬 ${message}`),
+  emit: (message) => console.log(`📤 ${message}`), 
+  debug: (message) => console.log(`🔍 ${message}`),
   user: (message) => console.log(`👤 ${message}`),
+  inbox: (message) => console.log(`📬 ${message}`),
+  guest: (message) => console.log(`👤 ${message}`),
   idle: (message) => console.log(`😴 ${message}`),
   away: (message) => console.log(`🚶 ${message}`),
   active: (message) => console.log(`⚡ ${message}`),
@@ -78,6 +85,7 @@ const logWithIcon = {
   mouse: (message) => console.log(`🖱️ ${message}`),
   pause: (message) => console.log(`⏸️ ${message}`),
   resume: (message) => console.log(`▶️ ${message}`),
+  initChat: (message) => console.log(`📨 ${message}`),
   
   cleanup: (message) => console.log(`🧹 ${message}`),
   network: (message) => console.log(`🌐 ${message}`),
