@@ -74,26 +74,34 @@ if (process.env.ALLOW_ORIGINS) {
 // CORS Configuration
 app.use(cors({
   credentials: true,
-  origin: allowedOrigins,
+  origin: ['http://localhost:3000', 'http://localhost:8000'],
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
 }));
 
 // --- SOCKET.IO SETUP ---
-const io = new Server(server, {
-  cors: {
-    origin: allowedOrigins,
-    methods: ['GET', 'POST', 'PUT'],
-    credentials: true,
-  },
-  pingTimeout: 60000, // 60 seconds
-  pingInterval: 25000  // 25 seconds
-});
+// const io = new Server(server, {
+//   cors: {
+//     origin: allowedOrigins,
+//     methods: ['GET', 'POST', 'PUT'],
+//     credentials: true,
+//   },
+//   pingTimeout: 60000, // 60 seconds
+//   pingInterval: 25000  // 25 seconds
+// });
 
 app.use((req, res, next) => {
   req.app.set('socketio', io);
   next();
 });
 
+// Socket.IO Configuration for Employee Utility Time Optimization Phase 2
+const io = new Server(server, {
+  cors: {
+    origin: ['http://localhost:3000',  'http://localhost:8000'],
+    methods: ['GET', 'POST'],
+    credentials: true,
+  }
+});
 
 // Socket Authentication Middleware
 io.use(async (socket, next) => {
@@ -148,7 +156,6 @@ setupSocketHandlers(io);
 
 // Environment configuration
 const environment = process.env.NODE_ENV;
-//const environment = process.env.NODE_ENV_PROD;
 
 // API Routes section
 const staticPaths = {
