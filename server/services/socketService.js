@@ -8,6 +8,7 @@ const ActivityLog = require('../models/activityLogModel');
 const ChatSession = require('../models/chatSessionModel');
 const ChatMessage = require('../models/chatMessageModel');
 const LiveAgent = require('../models/liveAgentModel');
+const GuestUser = require('../models/guestUserModel');
 const agentAssignment = require('./agentAssignmentService');
 const { logWithIcon } = require('./consoleIcons');
 
@@ -60,14 +61,25 @@ const getClientIP = (socket) => {
   };
 
   // Debug log to help trace IP sources during connections - REMOVE in prod!
-  console.log('Debug client IP headers:', {
-    'cf-connecting-ip': cfConnectingIP,
-    'x-real-ip': real,
-    'x-forwarded-for': forwarded,
-    'handshake.address': socket.handshake.address,
-    'request.connection.remoteAddress': socket.request.connection?.remoteAddress,
-    'conn.remoteAddress': socket.conn?.remoteAddress
-  });
+  // console.log('Debug client IP headers:', {
+  //   'cf-connecting-ip': cfConnectingIP,
+  //   'x-real-ip': real,
+  //   'x-forwarded-for': forwarded,
+  //   'handshake.address': socket.handshake.address,
+  //   'request.connection.remoteAddress': socket.request.connection?.remoteAddress,
+  //   'conn.remoteAddress': socket.conn?.remoteAddress
+  // });
+
+  if (process.env.NODE_ENV === 'development') {
+    console.log('Debug client IP headers:', {
+      'cf-connecting-ip': cfConnectingIP,
+      'x-real-ip': real,
+      'x-forwarded-for': forwarded,
+      'handshake.address': socket.handshake.address,
+      'request.connection.remoteAddress': socket.request.connection?.remoteAddress,
+      'conn.remoteAddress': socket.conn?.remoteAddress
+    });
+  }
 
   // Priority: cf-connecting-ip (Cloudflare)
   if (cfConnectingIP && !isPrivateOrLocalIP(cfConnectingIP)) return cfConnectingIP;
@@ -625,6 +637,190 @@ const handleSpecificActivity = async (socket, io, data) => {
   }
 };
 
+
+// =================== CHAT FUNCTIONALITY STARTS HERE..... =================
+const handleChatSessionCreate = async (socket, io, payload, ack) => {
+  try {
+    const { sessionType = 'bot', guestEmail, metadata = {} } = payload;
+    const userId = socket.user?._id?.toString();
+    const isAuthenticated = !!userId;
+
+    let userInfo = {};
+    let guestUserId = null;
+
+    if (isAuthenticated) {
+      const user = await User.findById(userId);
+      if (user) {
+        userInfo = {
+          firstName: user.firstname,
+          lastName: user.lastname,
+          email: user.email,
+          phone: user.phone
+        };
+      }
+    } else if (guestEmail) {
+      let guestUser = await GuestUser.findOne({ email: guestEmail });
+      
+      if (!guestUser) {
+        guestUser = new GuestUser({
+          firstName: metadata.guestFirstName || 'Guest',
+          lastName: metadata.guestLastName || '',
+          email: guestEmail,
+          phone: metadata.guestPhone || ''
+        });
+        await guestUser.save();
+      }
+      
+      userInfo = {
+        firstName: guestUser.firstName,
+        lastName: guestUser.lastName,
+        email: guestUser.email,
+        phone: guestUser.phone
+      };
+      guestUserId = guestUser._id;
+    } else {
+      throw new Error('User authentication or guest email required');
+    }
+
+    const sessionData = {
+      userId: isAuthenticated ? userId : null,
+      guestUserId,
+      sessionType,
+      userInfo,
+      status: 'active',
+      createdDuringBusinessHours: socket.isBusinessHours,
+      metadata: {
+        ...metadata,
+        userAgent: socket.handshake.headers['user-agent'] || '',
+        ipAddress: getClientIP(socket),
+        businessHoursAtCreation: socket.businessHoursInfo
+      }
+    };
+
+    const session = new ChatSession(sessionData);
+    await session.save();
+
+    // Create metrics
+    const metrics = new ChatMetrics({
+      sessionId: session._id,
+      messageCount: { total: 0, userMessages: 0, agentMessages: 0, botMessages: 0 },
+      sessionMetrics: { startTime: new Date() }
+    });
+    await metrics.save();
+
+    // Send initial bot message
+    if (sessionType === 'bot') {
+      const botMessage = await ChatMessageController.sendInitialBotMessage(session);
+      if (botMessage) {
+        io.to(socket.id).emit('chat:message', {
+          sessionId: session._id,
+          message: botMessage
+        });
+      }
+    }
+
+    // Join session room
+    socket.join(`session:${session._id}`);
+    
+    const response = {
+      success: true,
+      session: session.toObject(),
+      metrics: metrics.toObject()
+    };
+
+    if (ack) ack(null, response);
+    return response;
+  } catch (error) {
+    logWithIcon.error('Chat session creation error:', error);
+    if (ack) ack({ error: error.message });
+    return { error: error.message };
+  }
+};
+
+const handleChatMessageSend = async (socket, io, payload, ack) => {
+  try {
+    const { sessionId, message, messageType = 'text', metadata = {} } = payload;
+    const userId = socket.user?._id?.toString();
+    const userRole = socket.user?.role || 'user';
+
+    // Validate session
+    const session = await ChatSession.findById(sessionId);
+    if (!session) throw new Error('Chat session not found');
+
+    // Check authorization
+    if (userRole === 'user' && session.userId?.toString() !== userId) {
+      throw new Error('Unauthorized access to this chat session');
+    }
+
+    // Determine sender information
+    let senderId, senderModel;
+    if (userId) {
+      senderId = userId;
+      senderModel = 'User';
+    } else {
+      // This is a guest user
+      if (!session.guestUserId) {
+        throw new Error('Guest user not found for this session');
+      }
+      senderId = session.guestUserId;
+      senderModel = 'GuestUser';
+    }
+
+    // Create message
+    const chatMessage = new ChatMessage({
+      sessionId,
+      senderId,
+      senderModel,
+      senderType: 'user',
+      message: message,
+      messageType,
+      metadata: {
+        ...metadata,
+        businessHoursMessage: !socket.isBusinessHours
+      }
+    });
+
+    await chatMessage.save();
+
+    // Update session
+    session.lastMessageAt = new Date();
+    await session.save();
+
+    // Broadcast to session room
+    io.to(`session:${sessionId}`).emit('chat:message', chatMessage.toObject());
+
+    // Generate bot response if needed
+    if (session.sessionType === 'bot') {
+      const botResponse = await ChatMessageController.generateBotResponse(
+        session, 
+        message, 
+        messageType
+      );
+      
+      if (botResponse) {
+        setTimeout(async () => {
+          const botMessage = await ChatMessageController.sendBotMessage(
+            sessionId,
+            botResponse
+          );
+          io.to(`session:${sessionId}`).emit('chat:message', botMessage);
+        }, 800);
+      }
+    }
+
+    if (ack) ack(null, { success: true });
+  } catch (error) {
+    logWithIcon.error('Error sending chat message:', error);
+    if (ack) ack({ error: error.message });
+  }
+};
+
+const handleJoinChatSession = (socket, sessionId) => {
+  socket.join(`session:${sessionId}`);
+  logWithIcon.chat(`Socket ${socket.id} joined chat session ${sessionId}`);
+};
+// =================== CHAT FUNCTIONALITY ENDS HERE..... ===================
+
 const handleAdminRequestStatusList = async (socket) => {
   if (!socket.user || socket.user.role !== 1) return;
 
@@ -643,11 +839,11 @@ const handleAdminRequestStatusList = async (socket) => {
 //ChatBot Helpers
 const joinSessionRoom = (socket, sessionId) => { 
   const room = `session_${sessionId}`;
-  socket, join(room);
+  socket.join(room);
   return room;
 };
 
-const broadcastNewMessageToSession = (io, socket, message) => { 
+const broadcastNewMessageToSession = (io, sessionId, message) => { 
   const room = `session_${sessionId}`;
   io.to(room).emit('message:new', message);
 };
@@ -655,14 +851,12 @@ const broadcastNewMessageToSession = (io, socket, message) => {
 const setupSocketHandlers = (io) => {
   io.on('connection', async (socket) => {
     // Let's Attach Business Hours details to Socket via businessHoursAdapter
-    try
-    {
-      const detailed = await bhAdapter.getDetailedStatus();
+    try {
+      const detailed = await businessHoursAdapter.getDetailedStatus();
       socket.businessHoursInfo = detailed || null;
       socket.isBusinessHours = !!(detailed && detailed.isOpen);
-    }
-    catch (error)
-    {
+    } catch (error) {
+      logWithIcon.warning('Business hours adapter failed:', error.message);
       socket.businessHoursInfo = null;
       socket.isBusinessHours = false;
     }
@@ -685,55 +879,51 @@ const setupSocketHandlers = (io) => {
     socket.on('session:create', async (payload, ack) => {
       try {
         const result = await SocketChatController.addChatSessionSocket({ user: socket.user, payload });
-        if (result && result.body && result.body.data && result.body.data.session) {
-          const sessionId = result.body.data.session._id || result.body.data.session.id;
-          const session = result.body.data.session;
-          joinSessionRoom(socket, sessionId);
-          socket.emit('session:created', result.body.data);
-          if (result.body.data.session.sessionType === 'live_agent') {
-            io.to('agents:available').emit('session:new', { session: result.body.data.session });
-          }
-        }
-        if (result && result.body && result.body.data && result.body.data.session) {
+        
+        if (result?.body?.data?.session) {
           const session = result.body.data.session;
           const sessionId = session._id || session.id;
+          
           joinSessionRoom(socket, sessionId);
-
-          // If session expects a live agent, attempt assignment immediately
+          
           if (session.sessionType === 'live_agent') {
             try {
-              const selectedAgent = await agentAssignment.selectAgent(session.requiredSkills || [], session.department || null);
+              const selectedAgent = await agentAssignment.selectAgent(
+                session.requiredSkills || [], 
+                session.department || null
+              );
+              
               if (selectedAgent) {
-                // update session record
-                const s = await ChatSession.findById(sessionId);
-                s.agentId = selectedAgent._id;
-                s.status = 'active';
-                s.sessionType = 'live_agent';
-                s.transferredAt = new Date();
-                await s.save();
+                // Update session with agent
+                const updatedSession = await ChatSession.findById(sessionId);
+                updatedSession.agentId = selectedAgent._id;
+                updatedSession.status = 'active';
+                updatedSession.sessionType = 'live_agent';
+                updatedSession.transferredAt = new Date();
+                await updatedSession.save();
 
-                // increment agent load
                 await agentAssignment.incrementAgentLoad(selectedAgent._id);
 
-                // notify agent and session participants
+                // Notify participants
                 io.to(`agent_${selectedAgent._id}`).emit('session:assigned', { sessionId, agent: selectedAgent });
                 io.to(`session_${sessionId}`).emit('agent:assigned', { sessionId, agent: selectedAgent });
               } else {
-                // no agent now -> queue & keep waiting_for_agent status handled by controller
+                // Queue for available agents
                 io.to('agents:available').emit('session:new', { session });
               }
             } catch (err) {
-              console.error('agent assignment error', err);
+              logWithIcon.error('Agent assignment error:', err);
               io.to('agents:available').emit('session:new', { session });
             }
           } else {
-            // bot flow
+            // Bot session
             socket.emit('session:created', result.body.data);
           }
         }
+        
         if (ack) ack(null, result);
       } catch (err) {
-        console.error('session:create error', err);
+        logWithIcon.error('Session creation error:', err);
         if (ack) ack({ error: err.message });
       }
     });
@@ -769,15 +959,19 @@ const setupSocketHandlers = (io) => {
         socket.isBusinessHours = socket.isBusinessHours || (socket.businessHoursInfo && socket.businessHoursInfo.isOpen);
         const result = await SocketChatController.sendMessageSocket({ user: socket.user, payload });
         const body = result?.body || {};
-        if (body && body.data) {
+        if (body?.data) {
           const message = body.data;
-          const sessionId = payload.sessionId || (message && message.sessionId);
+          const sessionId = payload.sessionId || message?.sessionId;
+          
           if (sessionId) {
             broadcastNewMessageToSession(io, sessionId, message);
-          } else {
-            if (payload.sessionId) {
-              const last = await ChatMessage.findOne({ sessionId: payload.sessionId }).sort({ createdAt: -1 }).lean();
-              if (last) broadcastNewMessageToSession(io, payload.sessionId, last);
+          } else if (payload.sessionId) {
+            // Fallback: get last message and broadcast
+            const lastMessage = await ChatMessage.findOne({ sessionId: payload.sessionId })
+              .sort({ createdAt: -1 })
+              .lean();
+            if (lastMessage) {
+              broadcastNewMessageToSession(io, payload.sessionId, lastMessage);
             }
           }
         }
@@ -900,11 +1094,36 @@ const setupSocketHandlers = (io) => {
       }
     });
 
+    // Add chat-specific properties to socket
+    socket.chatSessions = new Set();
+
+    // ================ CHAT EVENT HANDLERS ================
+    socket.on('chat:session:create', (payload, ack) =>
+      handleChatSessionCreate(socket, io, payload, ack)
+    );
+
+  socket.on('chat:message:send', (payload, ack) =>
+    handleChatMessageSend(socket, io, payload, ack)
+    );
+
+    socket.on('chat:session:join', (sessionId) => {
+      handleJoinChatSession(socket, sessionId);
+    });
+
+    socket.on('chat:typing', (sessionId) => {
+      socket.to(`session:${sessionId}`).emit('chat:typing', {
+        userId: socket.user?._id,
+        name: socket.user?.firstname || 'Guest'
+      });
+    });
+
     socket.on('disconnect', async (reason) => {
       await handleDisconnect(socket, io, reason);
     });
   });
 };
+
+
 module.exports = {
   setupSocketHandlers,
   validateStatus,
