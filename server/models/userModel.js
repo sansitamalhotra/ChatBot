@@ -130,6 +130,18 @@ const userSchema = new mongoose.Schema({
     type: Date,
     default: null
   },
+  lastKnownIP: {
+    type: String,
+    default: 'unknown'
+  },
+  socketId: {
+    type: String,
+    default: null
+  },
+  lastLogin: {
+    type: Date,
+    default: null
+  },
   resetPasswordToken: String,
   resetPasswordExpire: Date,
 });

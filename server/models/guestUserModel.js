@@ -3,14 +3,15 @@ const mongoose = require('mongoose');
 const guestUserSchema = new mongoose.Schema({
   firstName: { type: String, required: true },
   lastName: { type: String, default: '' },
-  email: { 
-    type: String, 
-    required: true, 
+  email: {
+    type: String,
+    required: true,
     unique: true,
     lowercase: true,
     trim: true
   },
   phone: { type: String, default: '' },
+  lastSeen: { type: Date, default: Date.now },
   sessions: [{ type: mongoose.Schema.Types.ObjectId, ref: 'ChatSession' }],
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now }

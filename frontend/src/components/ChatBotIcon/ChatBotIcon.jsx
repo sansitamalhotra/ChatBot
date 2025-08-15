@@ -14,8 +14,7 @@ Modal.setAppElement('#root');
 // Use environment variable or fallback to default
 const STORAGE_USER_KEY = process.env.REACT_APP_CHAT_STORAGE_USER_KEY || "chat_widget_userinfo_v1";
 const STORAGE_MESSAGES_PREFIX = process.env.REACT_APP_CHAT_STORAGE_MESSAGES_PREFIX || "chat_widget_messages_v1_";
-const STORAGE_INPUT_KEY = process.env.REACT_APP_CHAT_INPUT_KEY || "chat_widget_input_v1"; // New storage key for input
-const STORAGE_CHAT_STATE_KEY = process.env.REACT_APP_CHAT_STATE_KEY || "chat_widget_state_v1"; // New storage key for chat state
+const STORAGE_INPUT_KEY = process.env.REACT_APP_CHAT_INPUT_KEY || "chat_widget_input_text"; // NEW: Input persistence key
 
 function timeAgo(ts) {
   if (!ts) return "";
@@ -58,18 +57,21 @@ const ChatBotIcon = () => {
   const { socket, isConnected } = useSocket();
   const [auth] = useAuth();
   const userFromAuth = auth?.user;
-  const { user } = useAuth();
 
   const [input, setInput] = useState("");
   const [isOpen, setIsOpen] = useState(false);
   const [session, setSession] = useState(null);
   const [messages, setMessages] = useState([]);
-  const [quickReplies, setQuickReplies] = useState([]);
   const [businessInfo, setBusinessInfo] = useState(null);
   const [unreadCount, setUnreadCount] = useState(0);
   const [showGuestForm, setShowGuestForm] = useState(false);
   const [isSubmittingGuest, setIsSubmittingGuest] = useState(false);
+  const [guestFormSubmitted, setGuestFormSubmitted] = useState(false);
   const [guestFormErrors, setGuestFormErrors] = useState({});
+  const [defaultMessagesLoaded, setDefaultMessagesLoaded] = useState(false);
+  
+  // NEW: Track pending messages to prevent duplicates
+  const [pendingMessages, setPendingMessages] = useState(new Set());
   
   const [guestInfo, setGuestInfo] = useState({
     firstName: '',
@@ -81,92 +83,61 @@ const ChatBotIcon = () => {
   const audioRef = useRef(null);
   const messagesEndRef = useRef(null);
 
-  // Check if user form is properly submitted
+  // FIXED: Proper user form submission check
   const userFormSubmitted = useMemo(() => {
-    if (userFromAuth) return true;
-    return Boolean(guestInfo.firstName && guestInfo.email && guestInfo.firstName.trim() && guestInfo.email.trim());
-  }, [userFromAuth, guestInfo.firstName, guestInfo.email]);
-
-  // Determine if user needs to fill guest form
-  const needsGuestForm = useMemo(() => {
-    logWithIcon.logging('Checking needsGuestForm:', {
-      userFromAuth: !!userFromAuth,
-      userFormSubmitted,
-      guestInfoComplete: !!(guestInfo.firstName && guestInfo.email)
-    });
-    
-    // If user is authenticated, they never need guest form
     if (userFromAuth) {
-      return false;
+      logWithIcon.success('User is authenticated:', userFromAuth.email);
+      return true;
     }
     
-    // If not authenticated and guest form not submitted, they need form
-    return !userFormSubmitted;
-  }, [userFromAuth, userFormSubmitted, guestInfo]);
+    logWithIcon.active('Guest form submission status:', guestFormSubmitted);
+    return guestFormSubmitted;
+  }, [userFromAuth, guestFormSubmitted]);
+
+  // FIXED: Determine if user needs to fill guest form
+  const needsGuestForm = useMemo(() => {
+    const result = !userFromAuth && !userFormSubmitted;
+    logWithIcon.guest('Needs guest form:', {
+      userFromAuth: !!userFromAuth,
+      userFormSubmitted,
+      result
+    });
+    return result;
+  }, [userFromAuth, userFormSubmitted]);
 
   const storageKey = useMemo(
     () => STORAGE_MESSAGES_PREFIX + (session?._id || session?.id || "guest"),
     [session]
   );
 
-  // Enhanced: Load persisted input text on mount
+  // FIX 2: Load persisted input text on mount
   useEffect(() => {
     try {
       const savedInput = localStorage.getItem(STORAGE_INPUT_KEY);
-      if (savedInput) {
+      if (savedInput && savedInput.trim()) {
         setInput(savedInput);
-        logWithIcon.info("Restored input text from localStorage:", savedInput);
       }
     } catch (error) {
-      logWithIcon.warning("Failed to load input from localStorage:", error);
+      console.warn("Failed to load input from localStorage:", error);
     }
   }, []);
 
-  // Enhanced: Save input text to localStorage whenever it changes
+  // FIX 2: Persist input text changes (debounced to avoid excessive writes)
   useEffect(() => {
-    try {
-      if (input.trim()) {
-        localStorage.setItem(STORAGE_INPUT_KEY, input);
-      } else {
-        localStorage.removeItem(STORAGE_INPUT_KEY);
+    const timeoutId = setTimeout(() => {
+      try {
+        if (input && input.trim()) {
+          localStorage.setItem(STORAGE_INPUT_KEY, input);
+        } else if (!input) {
+          localStorage.removeItem(STORAGE_INPUT_KEY);
+        }
+      } catch (error) {
+        console.warn("Failed to save input to localStorage:", error);
       }
-    } catch (error) {
-      logWithIcon.warning("Failed to save input to localStorage:", error);
-    }
+    }, 300); // Debounce for 300ms
+
+    return () => clearTimeout(timeoutId);
   }, [input]);
-
-  // Enhanced: Load persisted chat state on mount
-  useEffect(() => {
-    try {
-      const savedChatState = localStorage.getItem(STORAGE_CHAT_STATE_KEY);
-      if (savedChatState) {
-        const chatState = JSON.parse(savedChatState);
-        if (chatState.isOpen) {
-          setIsOpen(chatState.isOpen);
-          logWithIcon.info("Restored chat state from localStorage:", chatState);
-        }
-        if (chatState.unreadCount && chatState.unreadCount > 0) {
-          setUnreadCount(chatState.unreadCount);
-        }
-      }
-    } catch (error) {
-      logWithIcon.warning("Failed to load chat state from localStorage:", error);
-    }
-  }, []);
-
-  // Enhanced: Save chat state to localStorage whenever it changes
-  useEffect(() => {
-    try {
-      const chatState = {
-        isOpen,
-        unreadCount,
-        timestamp: Date.now()
-      };
-      localStorage.setItem(STORAGE_CHAT_STATE_KEY, JSON.stringify(chatState));
-    } catch (error) {
-      logWithIcon.warning("Failed to save chat state to localStorage:", error);
-    }
-  }, [isOpen, unreadCount]);
 
   /** --- Load persisted guest + messages on mount --- **/
   useEffect(() => {
@@ -180,42 +151,31 @@ const ChatBotIcon = () => {
           email: u.email || "",
           phone: u.phone || ""
         });
+        
+        // Set guest form as submitted if we have required fields
+        const hasRequiredInfo = Boolean(u.firstName && u.email && u.firstName.trim() && u.email.trim());
+        setGuestFormSubmitted(hasRequiredInfo);
+        console.log('Loaded guest info from storage:', u, 'Form submitted:', hasRequiredInfo);
       }
     } catch (error) {
-      logWithIcon.warning("Failed to load guest info from localStorage:", error);
+      console.warn("Failed to load guest info from localStorage:", error);
     }
   }, []);
 
-  // Enhanced: Load persisted messages on mount with fallback initialization
   useEffect(() => {
     try {
       const raw = localStorage.getItem(storageKey);
-      if (raw) {
-        const savedMessages = JSON.parse(raw);
-        if (savedMessages && savedMessages.length > 0) {
-          setMessages(savedMessages);
-          logWithIcon.info('💾 Loaded messages from localStorage:', savedMessages.length);
-          
-          // Restore quick replies from the last message if any
-          const lastMessage = savedMessages[savedMessages.length - 1];
-          if (lastMessage && lastMessage.quickReplies && lastMessage.quickReplies.length > 0) {
-            setQuickReplies(lastMessage.quickReplies);
-          }
-        }
-      }
+      if (raw) setMessages(JSON.parse(raw));
     } catch (error) {
-      logWithIcon.warning("Failed to load messages from localStorage:", error);
+      console.warn("Failed to load messages from localStorage:", error);
     }
   }, [storageKey]);
 
-  // Enhanced: Save messages to localStorage and preserve quick replies
   useEffect(() => {
     try {
-      if (messages.length > 0) {
-        localStorage.setItem(storageKey, JSON.stringify(messages));
-      }
+      localStorage.setItem(storageKey, JSON.stringify(messages));
     } catch (error) {
-      logWithIcon.warning("Failed to save messages to localStorage:", error);
+      console.warn("Failed to save messages to localStorage:", error);
     }
   }, [messages, storageKey]);
 
@@ -235,7 +195,7 @@ const ChatBotIcon = () => {
   const normalizeMessage = useCallback(
     (msg) => {
       if (!msg) return null;
-      const id = msg._id || msg.id || `m_${Date.now()}`;
+      const id = msg._id || msg.id || `m_${Date.now()}_${Math.random()}`;
       const text = msg.message || msg.text || "";
       const ts = msg.createdAt || msg.timestamp || Date.now();
       const from =
@@ -267,13 +227,48 @@ const ChatBotIcon = () => {
     [session, userFromAuth]
   );
 
+  // FIXED: Enhanced handleIncomingMessage with better duplicate prevention
   const handleIncomingMessage = useCallback(
     (rawMsg) => {
       const msg = normalizeMessage(rawMsg);
       if (!msg) return;
 
-      setMessages((prev) => [...prev, msg]);
-      setQuickReplies(msg.quickReplies.length ? msg.quickReplies : []);
+      // Check if this message already exists (by ID or by content and timestamp)
+      setMessages((prevMessages) => {
+        const messageExists = prevMessages.some(existingMsg => 
+          existingMsg.id === msg.id || 
+          (existingMsg.text === msg.text && 
+           existingMsg.from === msg.from && 
+           Math.abs(existingMsg.timestamp - msg.timestamp) < 1000) // Within 1 second
+        );
+
+        if (messageExists) {
+          console.log('Duplicate message detected, skipping:', msg);
+          return prevMessages;
+        }
+
+        // Remove from pending if this is a confirmation of a sent message
+        if (msg.from === 'user') {
+          setPendingMessages(prev => {
+            const newPending = new Set(prev);
+            // Remove any pending message with similar content
+            for (const pendingId of prev) {
+              if (pendingId.includes(msg.text.substring(0, 10))) {
+                newPending.delete(pendingId);
+              }
+            }
+            return newPending;
+          });
+        }
+
+        return [...prevMessages, msg];
+      });
+
+      // Only update quick replies for bot messages
+      if (msg.from === 'bot' && msg.quickReplies.length > 0) {
+        // Don't show quick replies in global footer - they'll be shown with the message
+        // setQuickReplies(msg.quickReplies);
+      }
 
       if (!isOpen) {
         setUnreadCount((n) => n + 1);
@@ -289,10 +284,12 @@ const ChatBotIcon = () => {
     if (!socket) return;
 
     const onSessionCreated = (payloadRaw) => {
+      console.log('Session created event received:', payloadRaw);
       const payload = payloadRaw?.body?.data || payloadRaw;
       const sess = payload?.session || payload || null;
       if (sess) {
         setSession(sess);
+        console.log('Session set:', sess);
         if (payload.businessHours) setBusinessInfo(payload.businessHours);
       }
       if (payload?.welcomeMessage) {
@@ -318,203 +315,193 @@ const ChatBotIcon = () => {
   }, [socket, handleIncomingMessage]);
 
   /** --- Create a new session --- **/
-const createSession = useCallback(async () => {
-  if (!socket || !socket.connected) {
-    logWithIcon.error('Cannot create session: socket not connected');
-    return;
-  }
-  
-  if (session) {
-    logWithIcon.info('ℹ️ Session already exists:', session._id);
-    return;
-  }
-
-  let sessionData;
-  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-
-  logWithIcon.waiting('Creating session - user check:', {
-    userFromAuth: !!userFromAuth,
-    userEmail: userFromAuth?.email,
-    userId: userFromAuth?._id || userFromAuth?.id,
-    guestInfo: guestInfo.email
-  });
-
-  // CRITICAL FIX: Proper authentication check using the actual auth context
-  if (userFromAuth && (userFromAuth._id || userFromAuth.id)) {
-    // For AUTHENTICATED users - DO NOT send guestEmail
-    sessionData = {
-      entryPoint: "widget",
-      selectedOption: "general_inquiry", 
-      timezone,
-      firstName: userFromAuth.firstname || userFromAuth.firstName || 'User',
-      lastName: userFromAuth.lastname || userFromAuth.lastName || '',
-      email: userFromAuth.email,
-      phone: userFromAuth.phone || '',
-      // CRITICAL: NO guestEmail for authenticated users
-      metadata: {
-        authenticatedUser: true,
-        userId: userFromAuth._id || userFromAuth.id
-      }
-    };
-    
-    logWithIcon.success('Creating session for AUTHENTICATED user:', {
-      email: userFromAuth.email,
-      userId: userFromAuth._id || userFromAuth.id
-    });
-  } 
-  // Only for actual GUEST users
-  else if (!userFromAuth && userFormSubmitted && guestInfo.firstName && guestInfo.email) {
-    const { firstName, lastName, email, phone } = guestInfo;
-    
-    if (!firstName.trim() || !email.trim()) {
-      logWithIcon.error('Cannot create guest session: missing required fields');
+  const createSession = useCallback(async () => {
+    if (!socket || !socket.connected || session) {
+      console.log('Cannot create session:', {
+        hasSocket: !!socket,
+        isConnected: socket?.connected,
+        hasSession: !!session
+      });
       return;
     }
-    
-    sessionData = {
-      entryPoint: "widget",
-      selectedOption: "general_inquiry",
-      timezone,
-      firstName: firstName.trim(),
-      lastName: lastName?.trim() || '',
-      email: email.toLowerCase().trim(),
-      phone: phone?.trim() || '',
-      guestEmail: email.toLowerCase().trim(), // This tells backend it's a guest user
-      metadata: {
-        guestFirstName: firstName.trim(),
-        guestLastName: lastName?.trim() || '',
-        guestPhone: phone?.trim() || '',
-        authenticatedUser: false,
-        isGuest: true
+
+    let sessionData;
+    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+    // FIXED: Proper session data creation based on user type
+    if (userFromAuth) {
+      // For authenticated users - use their actual data
+      console.log('Creating session for authenticated user:', userFromAuth.email);
+      sessionData = {
+        entryPoint: "widget",
+        selectedOption: "general_inquiry",
+        timezone,
+        firstName: userFromAuth.firstname || userFromAuth.firstName,
+        lastName: userFromAuth.lastname || userFromAuth.lastName,
+        email: userFromAuth.email,
+        phone: userFromAuth.phone || '',
+        // Don't send guestEmail for authenticated users
+        metadata: {
+          authenticatedUser: true,
+          userId: userFromAuth._id || userFromAuth.id
+        }
+      };
+    } else {
+      // For guest users - use guest info
+      console.log('Creating session for guest user:', guestInfo);
+      const { firstName, lastName, email, phone } = guestInfo;
+      
+      // Save guest info to localStorage
+      try {
+        localStorage.setItem(
+          STORAGE_USER_KEY,
+          JSON.stringify({ firstName, lastName, email, phone })
+        );
+      } catch (error) {
+        console.warn("Failed to save guest info to localStorage:", error);
       }
-    };
-    
-    logWithIcon.success('Creating session for GUEST user:', email);
-  } else {
-    logWithIcon.error('Cannot create session: invalid user state', {
-      userFromAuth: !!userFromAuth,
-      userFormSubmitted,
-      guestEmail: guestInfo.email
-    });
-    return;
-  }
 
-  // Create session with proper error handling
-  try {
-    logWithIcon.emit('📤 Emitting session:create with data:', {
-      ...sessionData,
-      email: sessionData.email,
-      isGuest: !userFromAuth
-    });
-
-    const result = await new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        reject(new Error('Session creation timeout'));
-      }, 10000);
-
-      socket.emit("session:create", sessionData, (err, result) => {
-        clearTimeout(timeout);
-        
-        if (err) {
-          logWithIcon.error("session:create error:", err);
-          reject(err);
-          return;
+      sessionData = {
+        entryPoint: "widget",
+        selectedOption: "general_inquiry",
+        timezone,
+        firstName,
+        lastName,
+        email,
+        phone,
+        guestEmail: email, // This tells backend it's a guest user
+        metadata: {
+          guestFirstName: firstName,
+          guestLastName: lastName,
+          guestPhone: phone
         }
-        
-        logWithIcon.emit('session:create response:', result);
-        
-        const data = result?.body?.data || result;
-        const sess = data?.session || data || null;
-        
-        if (sess) {
-          logWithIcon.success('Session created successfully:', sess._id);
-          setSession(sess);
-          if (data.welcomeMessage) handleIncomingMessage(data.welcomeMessage);
-          if (data.businessHours) setBusinessInfo(data.businessHours);
-          resolve(sess);
-        } else {
-          logWithIcon.error('No session data in response:', result);
-          reject(new Error('No session data received'));
-        }
-      });
+      };
+    }
+
+    console.log('Emitting session:create with data:', sessionData);
+
+    socket.emit("session:create", sessionData, (err, result) => {
+      if (err) {
+        console.error("session:create err", err);
+        return;
+      }
+      console.log('Session creation response:', result);
+      const data = result?.body?.data || result;
+      const sess = data?.session || data || null;
+      if (sess) {
+        setSession(sess);
+        if (data.welcomeMessage) handleIncomingMessage(data.welcomeMessage);
+        if (data.businessHours) setBusinessInfo(data.businessHours);
+      }
     });
+  }, [
+    socket,
+    session,
+    userFromAuth,
+    guestInfo,
+    handleIncomingMessage
+  ]);
 
-    logWithIcon.success('Session creation completed:', result._id);
-  } catch (error) {
-    logWithIcon.error('Failed to create session:', error);
-    setMessages([
-      {
-        id: "session-error",
-        from: "bot", 
-        text: "Sorry, I'm having trouble starting our conversation. Please try refreshing the page.",
-        timestamp: Date.now(),
-        avatar: FavIconLogo,
-        quickReplies: [],
-      },
-    ]);
-  }
-}, [socket, session, userFromAuth, guestInfo, userFormSubmitted, handleIncomingMessage]);
-
-  /** --- Send message --- **/
+  /** --- Send message --- FIXED to prevent duplicates **/
   const sendMessage = useCallback(() => {
     if (!input.trim()) return;
-    const text = input.trim();
-    const draft = {
-      id: `local_${Date.now()}`,
-      from: "user",
-      text,
-      timestamp: Date.now(),
-      avatar: userFromAuth
-        ? getProfileImageSrc(userFromAuth?.photo)
-        : defaultAvatar,
-    };
-    setMessages((prev) => [...prev, draft]);
     
-    // Enhanced: Clear input and remove from localStorage after sending
+    const text = input.trim();
+    const messageId = `local_${Date.now()}_${Math.random()}`;
+    
+    // Add to pending messages to track it
+    setPendingMessages(prev => new Set([...prev, messageId]));
+    
+    // Clear input state and localStorage immediately
     setInput("");
     try {
       localStorage.removeItem(STORAGE_INPUT_KEY);
     } catch (error) {
-      logWithIcon.warning("Failed to remove input from localStorage:", error);
+      console.warn("Failed to clear input from localStorage:", error);
     }
     
-    if (!socket || !socket.connected) return;
-    socket.emit("message:send", {
-      sessionId: session?._id || session?.id,
-      message: text,
-      messageType: "text",
-    });
-  }, [input, session, socket, userFromAuth]);
-
-  const handleQuickReply = useCallback(
-    (option) => {
-      const value = option.value || option.text || option;
+    // Only send via socket, don't add to local messages
+    // The message will be added when it comes back from the server
+    if (socket && socket.connected) {
+      socket.emit("message:send", {
+        sessionId: session?._id || session?.id,
+        message: text,
+        messageType: "text",
+      });
+    } else {
+      // If no socket connection, add locally as fallback
       const draft = {
-        id: `local_qr_${Date.now()}`,
+        id: messageId,
         from: "user",
-        text: option.text || value,
+        text,
         timestamp: Date.now(),
         avatar: userFromAuth
           ? getProfileImageSrc(userFromAuth?.photo)
           : defaultAvatar,
       };
       setMessages((prev) => [...prev, draft]);
-      setQuickReplies([]);
+      // Remove from pending since we added it locally
+      setPendingMessages(prev => {
+        const newPending = new Set(prev);
+        newPending.delete(messageId);
+        return newPending;
+      });
+    }
+    
+    // FIXED: Show guest form AFTER sending the first message for unauthenticated users
+    if (!userFromAuth && !guestFormSubmitted) {
+      console.log('Guest user sent first message, showing form for data collection...');
+      setTimeout(() => {
+        setShowGuestForm(true);
+      }, 500); // Small delay so user sees their message first
+    }
+  }, [input, session, socket, userFromAuth, guestFormSubmitted]);
+    
+  const handleQuickReply = useCallback(
+    (option) => {
+      const value = option.value || option.text || option;
+      const text = option.text || value;
+      const messageId = `local_qr_${Date.now()}_${Math.random()}`;
+      
+      // Add to pending messages
+      setPendingMessages(prev => new Set([...prev, messageId]));
+      
+      // Clear any existing quick replies
+      // setQuickReplies([]);
+      
+      // Send via socket only
       if (socket && socket.connected && session) {
         socket.emit("message:send", {
           sessionId: session._id || session.id,
           message: value,
           messageType: "option_selection",
         });
+      } else {
+        // Fallback if no socket
+        const draft = {
+          id: messageId,
+          from: "user",
+          text,
+          timestamp: Date.now(),
+          avatar: userFromAuth
+            ? getProfileImageSrc(userFromAuth?.photo)
+            : defaultAvatar,
+        };
+        setMessages((prev) => [...prev, draft]);
+        setPendingMessages(prev => {
+          const newPending = new Set(prev);
+          newPending.delete(messageId);
+          return newPending;
+        });
       }
     },
     [session, socket, userFromAuth]
   );
 
-  const renderMessage = (m) => {
+  const renderMessage = (m, index) => {
     const isUser = m.from === "user";
     return (
-      <div key={m.id} className={`chat-row ${isUser ? "user" : "agent-or-bot"}`}>
+      <div key={`${m.id}-${index}`} className={`chat-row ${isUser ? "user" : "agent-or-bot"}`}>
         {!isUser && (
           <img className="msg-avatar" src={m.avatar} alt={m.from} />
         )}
@@ -526,7 +513,7 @@ const createSession = useCallback(async () => {
             <div className="message-quick-replies">
               {m.quickReplies.map((qr, i) => (
                 <button
-                  key={i}
+                  key={`${m.id}-qr-${i}`}
                   className="quick-reply-btn"
                   onClick={() => handleQuickReply(qr)}
                 >
@@ -564,7 +551,7 @@ const createSession = useCallback(async () => {
       errors.email = 'Please enter a valid email';
     }
     
-    if (guestInfo.phone && !/^[\d\s\+\-\(\)]+$/.test(guestInfo.phone)) {
+    if (guestInfo.phone && !/^[\d\s+\-()]+$/.test(guestInfo.phone)) {
       errors.phone = 'Please enter a valid phone number';
     }
     
@@ -573,91 +560,65 @@ const createSession = useCallback(async () => {
 
   /** --- Initialize chat session and messages --- **/
   const initializeChatSession = async () => {
-    try {
-      logWithIcon.info('🚀 Initializing chat session...', {
-        hasSession: !!session,
-        messagesLength: messages.length,
-        userFormSubmitted,
-        userFromAuth: !!userFromAuth
-      });
-
-      // Always show initial messages if none exist, regardless of session status
-      if (messages.length === 0) {
-        const biz = await fetchBusinessHours();
-        setBusinessInfo(biz);
-        
-        const userName = userFromAuth?.firstname || userFromAuth?.firstName || guestInfo.firstName || 'there';
-        
-        if (biz && !biz.isOpen && biz.outsideHoursMessage) {
-          logWithIcon.info('📅 Setting outside hours message');
-          setMessages([
-            {
-              id: "outside-hours",
-              from: "bot",
-              text: biz.outsideHoursMessage,
-              timestamp: Date.now(),
-              avatar: FavIconLogo,
-              quickReplies: biz.outsideHoursOptions || [],
-            },
-          ]);
-          setQuickReplies(biz.outsideHoursOptions || []);
-        } else {
-          logWithIcon.info('👋 Setting welcome message with default options');
-          const welcomeMessage = {
+    console.log('Initializing chat session...', {
+      hasSession: !!session,
+      hasSocket: !!socket,
+      isConnected: socket?.connected,
+      userFormSubmitted,
+      defaultMessagesLoaded
+    });
+    
+    // FIX 4: Load default messages only once and prevent duplicates
+    if (messages.length === 0 && !defaultMessagesLoaded) {
+      setDefaultMessagesLoaded(true); // Prevent future duplicate loads
+      
+      const biz = await fetchBusinessHours();
+      setBusinessInfo(biz);
+      
+      if (biz && !biz.isOpen && biz.outsideHoursMessage) {
+        setMessages([
+          {
+            id: "outside-hours",
+            from: "bot",
+            text: biz.outsideHoursMessage,
+            timestamp: Date.now(),
+            avatar: FavIconLogo,
+            quickReplies: biz.outsideHoursOptions || [],
+          },
+        ]);
+      } else {
+        setMessages([
+          {
             id: "welcome-fallback",
             from: "bot",
-            text: `Hello ${userName}! How can I be of service to you?`,
+            text: "How can I be of service to you?",
             timestamp: Date.now(),
             avatar: FavIconLogo,
             quickReplies: [
               { text: "What is your service?", value: "service_info" },
               { text: "Why should I choose you?", value: "why_choose_us" },
+              { text: "How do I get started?", value: "getting_started" },
               { text: "Search Jobs", value: "search_job" },
               { text: "Partnership Info", value: "partner_pspl" },
               { text: "Application Help", value: "application_issue" },
               { text: "Talk to Agent", value: "live_agent" },
             ],
-          };
-          
-          setMessages([welcomeMessage]);
-          setQuickReplies(welcomeMessage.quickReplies);
-        }
+          },
+        ]);
       }
-
-      // Create session after showing initial messages
-      if (!session && socket && socket.connected) {
-        // Check if we have proper user info (either authenticated or guest)
-        if (userFromAuth || userFormSubmitted) {
-          logWithIcon.info('🔗 Creating session...');
-          await createSession();
-        } else {
-          logWithIcon.warning('⚠️ Cannot create session: missing user information');
-          return;
-        }
-      }
-      
-    } catch (error) {
-      logWithIcon.error('❌ Error initializing chat session:', error);
-      // Show error message to user
-      setMessages([
-        {
-          id: "error-message",
-          from: "bot",
-          text: "Sorry, I'm having trouble connecting right now. Please try again in a moment.",
-          timestamp: Date.now(),
-          avatar: FavIconLogo,
-          quickReplies: [],
-        },
-      ]);
-      setQuickReplies([]);
+    }
+    
+    // Create session only if user has submitted form/is authenticated
+    if (!session && socket && socket.connected && userFormSubmitted) {
+      console.log('Creating session...');
+      await createSession();
     }
   };
 
-  /** --- Enhanced: Close chat function --- **/
-  const handleCloseChat = useCallback(() => {
+  // FIX 1: Close chat when chat header is clicked
+  const handleHeaderClick = () => {
     setIsOpen(false);
-    logWithIcon.info("Chat closed by user");
-  }, []);
+  };
 
   /** --- Toggle Chat --- **/
   const handleToggle = async () => {
@@ -667,38 +628,24 @@ const createSession = useCallback(async () => {
     if (next) {
       setUnreadCount(0);
       
-      logWithIcon.debug('🔍 Debug - handleToggle:', {
+      console.log('Debug - handleToggle:', {
         userFromAuth: !!userFromAuth,
-        userEmail: userFromAuth?.email,
         needsGuestForm,
-        userFormSubmitted,
-        guestInfo: guestInfo.email,
-        messagesLength: messages.length
+        guestInfo,
+        userFormSubmitted
       });
       
-      // CRITICAL: Check for authenticated user FIRST
-      if (userFromAuth) {
-        logWithIcon.success('✅ Authenticated user detected - initializing chat');
-        await initializeChatSession();
-        return;
-      }
-      
-      // For unauthenticated users - check if guest form is needed
-      if (!userFromAuth && !userFormSubmitted) {
-        logWithIcon.guest('👤 Guest user needs form - showing modal');
+      // FIXED: Show guest form only for unauthenticated users without guest info
+      if (needsGuestForm) {
+        console.log('Showing guest form...');
         setShowGuestForm(true);
-        return;
-      }
-      
-      // If guest form completed, initialize chat
-      if (!userFromAuth && userFormSubmitted) {
-        logWithIcon.success('📝 Guest form completed - initializing chat');
+        // Still initialize default messages even when showing form
         await initializeChatSession();
         return;
       }
       
-      // Fallback - ensure chat is initialized
-      logWithIcon.info('🔄 Fallback - initializing chat');
+      // Initialize chat for authenticated users or users with guest info
+      console.log('Initializing chat...');
       await initializeChatSession();
     }
   };
@@ -720,81 +667,56 @@ const createSession = useCallback(async () => {
   };
 
   const submitGuestForm = async () => {
-  const errors = validateGuestForm();
-  
-  if (Object.keys(errors).length > 0) {
-    setGuestFormErrors(errors);
-    return;
-  }
-
-  setIsSubmittingGuest(true);
-  
-  try {
-    // Clean the data before sending
-    const cleanGuestInfo = {
-      firstName: guestInfo.firstName.trim(),
-      lastName: guestInfo.lastName.trim(),
-      email: guestInfo.email.toLowerCase().trim(),
-      phone: guestInfo.phone.trim()
-    };
-
-    logWithIcon.waiting('Submitting guest form:', cleanGuestInfo);
+    const errors = validateGuestForm();
     
-    const response = await API.post('/api/v1/guestUsers/create-guest-user', cleanGuestInfo);
+    if (Object.keys(errors).length > 0) {
+      setGuestFormErrors(errors);
+      return;
+    }
+
+    setIsSubmittingGuest(true);
     
-    if (response.data.success) {
-      const { firstName, lastName, email, phone } = response.data.data;
+    try {
+      const response = await API.post('/api/v1/guestUsers/create-guest-user', guestInfo);
       
-      logWithIcon.guest('Guest user created/updated:', email);
-      
-      // Update local state with clean data from server
-      setGuestInfo({ firstName, lastName, email, phone });
-      setShowGuestForm(false);
-      setGuestFormErrors({});
-      
-      // Save to localStorage
-      try {
-        localStorage.setItem(STORAGE_USER_KEY, JSON.stringify({
-          firstName,
-          lastName,
-          email,
-          phone
-        }));
-      } catch (error) {
-        logWithIcon.warning("Failed to save guest info to localStorage:", error);
+      if (response.data.success) {
+        const { firstName, lastName, email, phone } = response.data.data;
+        
+        // Update local state
+        setGuestInfo({ firstName, lastName, email, phone });
+        setGuestFormSubmitted(true);
+        setShowGuestForm(false);
+        setGuestFormErrors({});
+        
+        // Save to localStorage
+        try {
+          localStorage.setItem(STORAGE_USER_KEY, JSON.stringify({
+            firstName,
+            lastName,
+            email,
+            phone
+          }));
+        } catch (error) {
+          console.warn("Failed to save guest info to localStorage:", error);
+        }
+        
+        // Initialize chat session now that guest info is available
+        console.log('Guest form submitted successfully, initializing chat session...');
+        await initializeChatSession();
+        
+        logWithIcon.success('Guest user created and chat initialized');
       }
-      
-      // Initialize chat session
-      logWithIcon.guest('Guest form submitted successfully, initializing chat...');
-      await initializeChatSession();
-      
-      logWithIcon.success('Guest user created and chat initialized');
+    } catch (error) {
+      console.error("Error saving guest user:", error);
+      setGuestFormErrors({
+        submit: error.response?.data?.message || 'Failed to save guest information. Please try again.'
+      });
+    } finally {
+      setIsSubmittingGuest(false);
     }
-  } catch (error) {
-    logWithIcon.error("Error saving guest user:", error);
-    setGuestFormErrors({
-      submit: error.response?.data?.message || 'Failed to save guest information. Please try again.'
-    });
-  } finally {
-    setIsSubmittingGuest(false);
-  }
-};
+  };
 
-  // Enhanced: Handle input change with persistence
-  const handleInputChange = useCallback((e) => {
-    const value = e.target.value;
-    setInput(value);
-  }, []);
-
-  // Enhanced: Handle key down with enter support
-  const handleKeyDown = useCallback((e) => {
-    if (e.key === 'Enter' && inputEnabled) {
-      e.preventDefault();
-      sendMessage();
-    }
-  }, [sendMessage]);
-
-  const inputEnabled = userFormSubmitted && !showGuestForm;
+  const inputEnabled = true;
 
   return (
     <div className="chatbot-wrapper">
@@ -810,18 +732,14 @@ const createSession = useCallback(async () => {
 
       {isOpen && (
         <div className="chatbot-box">
-          <div 
-            className="chatbot-header"
-            onClick={handleCloseChat}
-            style={{ cursor: 'pointer' }}
-            title="Click to close chat"
-          >
+          {/* FIX 1: Make entire header clickable to close chat */}
+          <div className="chatbot-header" onClick={handleHeaderClick} style={{ cursor: 'pointer' }}>
             <div className="chat-header-left">
               <button
                 className="chat-close-btn"
                 onClick={(e) => {
-                  e.stopPropagation(); // Prevent event bubbling
-                  handleCloseChat();
+                  e.stopPropagation(); // Prevent double trigger
+                  setIsOpen(false);
                 }}
               >
                 <i className="fas fa-chevron-down"></i>
@@ -832,15 +750,22 @@ const createSession = useCallback(async () => {
                 </Link>
               </div>
               <div>
-                <div className="chat-title">Chat Assistant</div>
+                <div className="chat-title">
+                  {userFromAuth 
+                    ? `Chat Assistant - ${userFromAuth.firstname || 'User'}`
+                    : userFormSubmitted 
+                      ? `Chat Assistant - ${guestInfo.firstName}`
+                      : 'Chat Assistant'
+                  }
+                </div>
                 <div className="chat-sub">
                   {businessInfo
                     ? businessInfo.isOpen
-                      ? "We are online"
-                      : "Outside business hours"
+                        ? "We're online now"
+                        : "Outside business hours"
                     : isConnected
-                    ? "Connected"
-                    : "Connecting..."}
+                        ? "Connected"
+                        : "Connecting..."}
                 </div>
               </div>
             </div>
@@ -851,27 +776,17 @@ const createSession = useCallback(async () => {
             <div ref={messagesEndRef} />
           </div>
 
-          {quickReplies.length > 0 && (
-            <div className="chatbot-quickreplies global">
-              {quickReplies.map((qr, i) => (
-                <button
-                  key={i}
-                  className="quick-reply-btn"
-                  onClick={() => handleQuickReply(qr)}
-                >
-                  {qr.text || qr}
-                </button>
-              ))}
-            </div>
-          )}
-
           <div className="chatbot-input">
             <input
               value={input}
-              onChange={handleInputChange}
-              placeholder={inputEnabled ? "Type a message..." : "Please fill the form to start chatting"}
-              onKeyDown={handleKeyDown}
-              disabled={!inputEnabled}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder="Type a message..."
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  sendMessage(); // This will trigger guest form if needed
+                }
+              }}
+              disabled={false} // Always enabled
             />
             <button
               onClick={sendMessage}
@@ -884,36 +799,19 @@ const createSession = useCallback(async () => {
         </div>
       )}
 
-      {/* Guest Form Modal */}
+      {/* FIXED: Guest Form Modal - Now properly triggered */}
       <Modal
         isOpen={showGuestForm}
-        onRequestClose={() => {
-          if (!isSubmittingGuest) {
-            setShowGuestForm(false);
-            // If user closes modal without submitting, close the chat as well
-            setIsOpen(false);
-          }
-        }}
+        onRequestClose={() => !isSubmittingGuest && setShowGuestForm(false)}
         className="modal"
         overlayClassName="modal-overlay"
         shouldCloseOnOverlayClick={!isSubmittingGuest}
-        shouldCloseOnEsc={!isSubmittingGuest}
       >
         <div className="guest-form">
-          <div className="modal-header">
-            <h2>Welcome to PSPL Support!</h2>
-            <p>Please provide your details to start chatting with our assistant.</p>
-          </div>
+          <h2>Please provide your details to start chatting</h2>
           
           {guestFormErrors.submit && (
-            <div className="error-message" style={{ 
-              color: '#e74c3c', 
-              backgroundColor: '#ffebee', 
-              padding: '10px', 
-              borderRadius: '4px',
-              marginBottom: '1rem',
-              border: '1px solid #ffcdd2'
-            }}>
+            <div className="error-message" style={{ color: 'red', marginBottom: '1rem' }}>
               {guestFormErrors.submit}
             </div>
           )}
@@ -926,12 +824,10 @@ const createSession = useCallback(async () => {
               value={guestInfo.firstName}
               onChange={handleGuestFormChange}
               disabled={isSubmittingGuest}
-              placeholder="Enter your first name"
-              autoFocus
               required
             />
             {guestFormErrors.firstName && (
-              <span className="field-error" style={{ color: '#e74c3c', fontSize: '0.8rem', marginTop: '4px', display: 'block' }}>
+              <span className="field-error" style={{ color: 'red', fontSize: '0.8rem' }}>
                 {guestFormErrors.firstName}
               </span>
             )}
@@ -945,7 +841,6 @@ const createSession = useCallback(async () => {
               value={guestInfo.lastName}
               onChange={handleGuestFormChange}
               disabled={isSubmittingGuest}
-              placeholder="Enter your last name (optional)"
             />
           </div>
           
@@ -957,11 +852,10 @@ const createSession = useCallback(async () => {
               value={guestInfo.email}
               onChange={handleGuestFormChange}
               disabled={isSubmittingGuest}
-              placeholder="Enter your email address"
               required
             />
             {guestFormErrors.email && (
-              <span className="field-error" style={{ color: '#e74c3c', fontSize: '0.8rem', marginTop: '4px', display: 'block' }}>
+              <span className="field-error" style={{ color: 'red', fontSize: '0.8rem' }}>
                 {guestFormErrors.email}
               </span>
             )}
@@ -975,47 +869,24 @@ const createSession = useCallback(async () => {
               value={guestInfo.phone}
               onChange={handleGuestFormChange}
               disabled={isSubmittingGuest}
-              placeholder="Enter your phone number (optional)"
             />
             {guestFormErrors.phone && (
-              <span className="field-error" style={{ color: '#e74c3c', fontSize: '0.8rem', marginTop: '4px', display: 'block' }}>
+              <span className="field-error" style={{ color: 'red', fontSize: '0.8rem' }}>
                 {guestFormErrors.phone}
               </span>
             )}
           </div>
           
-          <div className="form-actions" style={{ marginTop: '1.5rem', display: 'flex', gap: '10px' }}>
+          <div className="form-actions">
             <button 
               onClick={submitGuestForm}
               disabled={isSubmittingGuest}
-              style={{
-                backgroundColor: '#2196f3',
-                color: 'white',
-                border: 'none',
-                padding: '12px 24px',
-                borderRadius: '4px',
-                cursor: isSubmittingGuest ? 'not-allowed' : 'pointer',
-                opacity: isSubmittingGuest ? 0.7 : 1,
-                flex: 1
-              }}
             >
-              {isSubmittingGuest ? 'Starting Chat...' : 'Start Chat'}
+              {isSubmittingGuest ? 'Submitting...' : 'Submit'}
             </button>
             <button 
-              onClick={() => {
-                setShowGuestForm(false);
-                setIsOpen(false);
-              }}
+              onClick={() => setShowGuestForm(false)}
               disabled={isSubmittingGuest}
-              style={{
-                backgroundColor: '#f5f5f5',
-                color: '#666',
-                border: '1px solid #ddd',
-                padding: '12px 24px',
-                borderRadius: '4px',
-                cursor: isSubmittingGuest ? 'not-allowed' : 'pointer',
-                opacity: isSubmittingGuest ? 0.7 : 1
-              }}
             >
               Cancel
             </button>

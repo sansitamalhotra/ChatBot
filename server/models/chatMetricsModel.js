@@ -10,10 +10,20 @@ const chatMetricsSchema = new Schema({
     unique: true,
     index: true
   },
+  // FIX 1: Make userId optional for guest users
   userId: {
     type: Schema.Types.ObjectId,
     ref: 'User',
-    required: true,
+    required: false, // Changed from true to false
+    default: null,
+    index: true
+  },
+  // FIX 2: Add guestUserId field for tracking guest metrics
+  guestUserId: {
+    type: Schema.Types.ObjectId,
+    ref: 'GuestUser',
+    required: false,
+    default: null,
     index: true
   },
   agentId: {
@@ -203,12 +213,22 @@ const chatMetricsSchema = new Schema({
   }
 });
 
+// FIX 3: Add validation to ensure either userId or guestUserId exists
+chatMetricsSchema.pre('validate', function(next) {
+  if (!this.userId && !this.guestUserId) {
+    return next(new Error('Either userId or guestUserId must be provided for metrics tracking'));
+  }
+  next();
+});
+
 // Compound indexes for analytics queries
 chatMetricsSchema.index({ createdAt: -1, resolved: 1 });
 chatMetricsSchema.index({ agentId: 1, createdAt: -1 });
 chatMetricsSchema.index({ outsideBusinessHours: 1, createdAt: -1 });
 chatMetricsSchema.index({ satisfactionScore: 1, createdAt: -1 });
 chatMetricsSchema.index({ tags: 1, createdAt: -1 });
+// FIX 4: Add index for guest user metrics
+chatMetricsSchema.index({ guestUserId: 1, createdAt: -1 });
 
 // Pre-save middleware
 chatMetricsSchema.pre('save', function(next) {
@@ -293,7 +313,7 @@ chatMetricsSchema.methods.markResolved = function() {
   return this.save();
 };
 
-// Static method to get metrics summary for date range
+// FIX 5: Updated static methods to handle both user types
 chatMetricsSchema.statics.getMetricsSummary = function(startDate, endDate, filters = {}) {
   const matchStage = {
     createdAt: {
@@ -309,6 +329,12 @@ chatMetricsSchema.statics.getMetricsSummary = function(startDate, endDate, filte
       $group: {
         _id: null,
         totalChats: { $sum: 1 },
+        authenticatedChats: {
+          $sum: { $cond: [{ $ne: ['$userId', null] }, 1, 0] }
+        },
+        guestChats: {
+          $sum: { $cond: [{ $ne: ['$guestUserId', null] }, 1, 0] }
+        },
         resolvedChats: {
           $sum: { $cond: ['$resolved', 1, 0] }
         },

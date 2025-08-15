@@ -1,6 +1,7 @@
 //server/models/chatTemplateModel.js
 const mongoose = require('mongoose');
 const { Schema } = mongoose;
+
 const escapeHtml = (str) => {
   if (typeof str !== 'string') return str;
   return str
@@ -13,9 +14,9 @@ const escapeHtml = (str) => {
 
 const ChatTemplateSchema = new Schema({
   title: { type: String, required: true },
-  templateType: { type: String, required: true }, // e.g., 'bot_response', 'outside_hours_message'
-  category: { type: String, required: false }, // e.g., 'business_hours', 'greeting'
-  content: { type: String, required: true }, // text with placeholders
+  templateType: { type: String, required: true },
+  category: { type: String, required: false },
+  content: { type: String, required: true },
   variables: [
     {
       name: String,
@@ -23,17 +24,29 @@ const ChatTemplateSchema = new Schema({
       defaultValue: Schema.Types.Mixed
     }
   ],
-  quickReplies: [
-    {
-      text: String,
-      value: String
+  quickReplies: {
+    type: Schema.Types.Mixed, // Allow both array of strings and array of objects
+    default: [],
+    validate: {
+      validator: function(value) {
+        if (!value) return true;
+        if (!Array.isArray(value)) return false;
+        
+        // Validate each item is either string or object with text/value
+        return value.every(item => {
+          if (typeof item === 'string') return true;
+          if (item && typeof item === 'object' && (item.text || item.value)) return true;
+          return false;
+        });
+      },
+      message: 'quickReplies must be an array of strings or objects with text/value properties'
     }
-  ],
+  },
   businessHoursOnly: { type: Boolean, default: false },
   isActive: { type: Boolean, default: true },
   priority: { type: Number, default: 0 },
   personalization: { type: Schema.Types.Mixed, default: {} },
-  conditions: { type: Schema.Types.Mixed, default: {} }, // optional rule object
+  conditions: { type: Schema.Types.Mixed, default: {} },
   createdBy: { type: Schema.Types.ObjectId, ref: 'User' },
   parentTemplate: { type: Schema.Types.ObjectId, ref: 'ChatTemplate', default: null },
   usage: {
@@ -51,6 +64,7 @@ const ChatTemplateSchema = new Schema({
 // Helper: extract placeholders from content and store in placeholders
 ChatTemplateSchema.pre('save', function(next) {
   try {
+    // Extract placeholders from content
     const content = this.content || '';
     const regex = /\{\{\s*([a-zA-Z0-9_.]+)\s*\}\}|\{([a-zA-Z0-9_.]+)\}/g;
     const placeholders = new Set();
@@ -60,12 +74,27 @@ ChatTemplateSchema.pre('save', function(next) {
       if (key) placeholders.add(key);
     }
     this.placeholders = Array.from(placeholders);
+    
+    // ADDED: Normalize quickReplies to ensure consistency
+    if (this.quickReplies && Array.isArray(this.quickReplies)) {
+      this.quickReplies = this.quickReplies.map(item => {
+        if (typeof item === 'string') {
+          return { text: item, value: item.toLowerCase().replace(/\s+/g, '_') };
+        } else if (item && typeof item === 'object') {
+          return {
+            text: item.text || item.value || String(item),
+            value: item.value || (item.text ? item.text.toLowerCase().replace(/\s+/g, '_') : 'option')
+          };
+        }
+        return { text: String(item), value: String(item).toLowerCase().replace(/\s+/g, '_') };
+      }).filter(item => item.text && item.text.trim().length > 0);
+    }
+    
     this.updatedAt = new Date();
   } catch (err) {
-    // ignore
-  } finally {
-    next();
+    console.error('Error in ChatTemplate pre-save:', err);
   }
+  next();
 });
 
 // Instance method: render
