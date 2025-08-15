@@ -17,7 +17,10 @@ const consoleIcons = {
   target: 'fas fa-bullseye',    
   statistics: 'fas fa-chart-bar',
   inbox: 'fas fa-inbox',
-  calendar: 'fas fa-calendar-alt', 
+  debug: 'fas fa-bug',
+  emit: 'fas fa-upload',
+  guest: 'fas fa-user-secret',
+  initChat: 'fas fa-envelope-open-text',
   
   // User status icons
   user: 'fas fa-user',                      
@@ -33,7 +36,16 @@ const consoleIcons = {
   
   // Media control icons
   pause: 'fas fa-pause-circle',             
-  resume: 'fas fa-play-circle',            
+  resume: 'fas fa-play-circle',   
+  
+  //Other Icons
+  cleanup: 'fas fa-broom',                 
+  network: 'fas fa-globe',                   
+  reconnect: 'fas fa-sync-alt',              
+  auth: 'fas fa-key',                        
+  waiting: 'fas fa-hourglass-half',         
+  launch: 'fas fa-rocket',                  
+  info: 'fas fa-info-circle',                
 };
 
 // Helper function to get Font Awesome class
@@ -59,8 +71,11 @@ const logWithIcon = {
   clipboard: (message) => console.log(`📋 ${message}`),
   target: (message) => console.log(`🎯 ${message}`),
   statistics: (message) => console.log(`📊 ${message}`), 
-  inbox: (message) => console.log(`📬 ${message}`),
+  emit: (message) => console.log(`📤 ${message}`), 
+  debug: (message) => console.log(`🔍 ${message}`),
   user: (message) => console.log(`👤 ${message}`),
+  inbox: (message) => console.log(`📬 ${message}`),
+  guest: (message) => console.log(`👤 ${message}`),
   idle: (message) => console.log(`😴 ${message}`),
   away: (message) => console.log(`🚶 ${message}`),
   active: (message) => console.log(`⚡ ${message}`),
@@ -70,7 +85,15 @@ const logWithIcon = {
   mouse: (message) => console.log(`🖱️ ${message}`),
   pause: (message) => console.log(`⏸️ ${message}`),
   resume: (message) => console.log(`▶️ ${message}`),
-  calendar: (message) => console.log(`📅 ${message}`)
+  initChat: (message) => console.log(`📨 ${message}`),
+  
+  cleanup: (message) => console.log(`🧹 ${message}`),
+  network: (message) => console.log(`🌐 ${message}`),
+  reconnect: (message) => console.log(`🔄 ${message}`),
+  auth: (message) => console.log(`🔑 ${message}`),
+  waiting: (message) => console.log(`⏳ ${message}`),
+  launch: (message) => console.log(`🚀 ${message}`),
+  info: (message) => console.log(`ℹ️ ${message}`),
 };
 
 // For frontend notification systems
