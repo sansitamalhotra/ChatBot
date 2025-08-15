@@ -462,7 +462,13 @@ const ChatBotIcon = () => {
       const value = option.value || option.text || option;
       const text = option.text || value;
       const messageId = `local_qr_${Date.now()}_${Math.random()}`;
-      
+
+      console.log("Quick reply selected:", value);
+      if(value === "Search Jobs" || value === "Search for jobs" || value === "search_job" || value === "View all jobs") {
+        console.log("Search Jobs clicked:", value);
+        window.open("Search-Jobs", "_blank", "noopener,noreferrer");
+      }
+
       // Add to pending messages
       setPendingMessages(prev => new Set([...prev, messageId]));
       
