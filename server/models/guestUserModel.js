@@ -11,7 +11,6 @@ const guestUserSchema = new mongoose.Schema({
     trim: true
   },
   phone: { type: String, default: '' },
-  lastSeen: { type: Date, default: Date.now },
   sessions: [{ type: mongoose.Schema.Types.ObjectId, ref: 'ChatSession' }],
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now }

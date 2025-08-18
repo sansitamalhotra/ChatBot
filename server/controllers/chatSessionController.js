@@ -11,94 +11,66 @@ const templateCache = require('../services/chatTemplateCache');
 const { logWithIcon } = require('../services/consoleIcons');
 
 class ChatSessionController {
-  // Create new chat session - FIXED LOGIC
+  // Create new chat session
   static async createChatSession(req, res) {
     try {
-      const { 
-        sessionType = 'bot', 
-        initialMessage = null, 
-        metadata = {}, 
-        guestEmail = null,
-        firstName,
-        lastName,
-        email,
-        phone 
-      } = req.body;
+      const { sessionType = 'bot', guestData = null, metadata = {} } = req.body;
       
-      const userId = req.user?.id;
-      const isBusinessHours = req.isBusinessHours;
+      const userId = req.user?.id; // Will be undefined for guest users
+      const isAuthenticated = !!userId;
+      
       let userInfo = {};
       let guestUserId = null;
 
-      logWithIcon.info('Creating chat session:', {
-        userId: !!userId,
-        guestEmail,
-        email,
-        firstName,
-        isAuthenticated: !!userId
-      });
-
-      // FIXED: Proper authentication check - handle authenticated user FIRST
-      if (userId) {
-        logWithIcon.info('Processing authenticated user session');
+      if (isAuthenticated) {
+        // Handle authenticated user
         const user = await User.findById(userId);
         if (!user) {
           return res.status(404).json({
             success: false,
-            message: 'Authenticated user not found in database'
+            message: 'Authenticated user not found'
           });
         }
-        
+
         userInfo = {
           firstName: user.firstname || user.firstName || 'User',
           lastName: user.lastname || user.lastName || '',
           email: user.email,
           phone: user.phone || ''
         };
-        logWithIcon.success('Creating session for authenticated user:', userInfo.email);
-      } 
-      // FIXED: Handle guest user ONLY when NOT authenticated
-      else {
-        logWithIcon.info('Processing guest user session');
-        // Use either guestEmail or email parameter
-        const guestEmailToUse = guestEmail || email;
-        
-        if (!guestEmailToUse || !firstName) {
+      } else {
+        // Handle guest user - require guest data
+        if (!guestData || !guestData.email || !guestData.firstName) {
           return res.status(400).json({
             success: false,
-            message: 'Email and first name are required for guest users'
+            message: 'Guest user data (email and firstName) is required for unauthenticated sessions'
           });
         }
 
-        // Validate required guest fields
-        if (!firstName.trim()) {
-          return res.status(400).json({
-            success: false,
-            message: 'First name cannot be empty'
-          });
-        }
-        
-        let guestUser = await GuestUser.findOne({ email: guestEmailToUse.toLowerCase() });
-        
+        // Create or update guest user
+        let guestUser = await GuestUser.findOne({ 
+          email: guestData.email.toLowerCase() 
+        });
+
         if (!guestUser) {
-          // Create new guest user
           guestUser = new GuestUser({
-            firstName: firstName.trim(),
-            lastName: lastName?.trim() || '',
-            email: guestEmailToUse.toLowerCase(),
-            phone: phone?.trim() || ''
+            firstName: guestData.firstName.trim(),
+            lastName: guestData.lastName?.trim() || '',
+            email: guestData.email.toLowerCase(),
+            phone: guestData.phone?.trim() || ''
           });
           await guestUser.save();
-          logWithIcon.success('✅ Created new guest user:', guestUser.email);
+          logWithIcon.success('New guest user created:', guestUser.email);
         } else {
-          // Update existing guest user with latest info
-          guestUser.firstName = firstName.trim();
-          if (lastName) guestUser.lastName = lastName.trim();
-          if (phone) guestUser.phone = phone.trim();
+          // Update existing guest user
+          guestUser.firstName = guestData.firstName.trim();
+          if (guestData.lastName) guestUser.lastName = guestData.lastName.trim();
+          if (guestData.phone) guestUser.phone = guestData.phone.trim();
+          guestUser.lastSeen = new Date();
           await guestUser.save();
-          logWithIcon.info('Updated existing guest user:', guestUser.email);
+          logWithIcon.info('Existing guest user updated:', guestUser.email);
         }
-        
+
         userInfo = {
           firstName: guestUser.firstName,
           lastName: guestUser.lastName,
@@ -106,86 +78,335 @@ class ChatSessionController {
           phone: guestUser.phone
         };
         guestUserId = guestUser._id;
-        logWithIcon.success('Using guest user for session:', userInfo.email);
       }
 
-      // Create session data - FIXED: Proper user type detection
-      const sessionData = {
-        userId: userId || null,
-        guestUserId: guestUserId || null,
+      // Get business hours status
+      const businessHours = await BusinessHours.getActive();
+      const isBusinessHours = businessHours ? businessHours.isCurrentlyOpen() : false;
+
+      // Create chat session
+      const session = new ChatSession({
+        userId: isAuthenticated ? userId : null,
+        guestUserId,
         sessionType,
         userInfo,
         status: 'active',
         createdDuringBusinessHours: isBusinessHours,
         metadata: {
           ...metadata,
-          userAgent: req.headers?.['user-agent'] || '',
-          ipAddress: req.ip || req.connection?.remoteAddress || '',
-          isAuthenticated: !!userId,
-          isGuest: !userId && !!guestUserId
+          userAgent: req.headers['user-agent'] || '',
+          ipAddress: req.ip || req.connection?.remoteAddress || 'unknown',
+          isAuthenticated,
+          isGuest: !isAuthenticated && !!guestUserId,
+          trackingId: !isAuthenticated && guestUserId ? guestUserId.toString() : userId
+        }
+      });
+
+      await session.save();
+
+      // Create chat metrics
+      const metrics = new ChatMetrics({
+        sessionId: session._id,
+        userId: isAuthenticated ? userId : null,
+        guestUserId,
+        startTime: new Date(),
+        requestTime: new Date(),
+        sessionMetrics: { startTime: new Date() },
+        messageCount: { total: 0, userMessages: 0, agentMessages: 0, botMessages: 0 },
+        outsideBusinessHours: !isBusinessHours,
+        businessHoursMetrics: {
+          requestedDuringHours: isBusinessHours,
+          servedDuringHours: isBusinessHours
+        }
+      });
+
+      await metrics.save();
+
+      // Generate welcome message for bot sessions
+      let welcomeMessage = null;
+      if (sessionType === 'bot') {
+        try {
+          welcomeMessage = await this.createWelcomeMessage(session, userInfo, isAuthenticated);
+        } catch (welcomeError) {
+          logWithIcon.error('Failed to create welcome message:', welcomeError);
+          // Continue without welcome message
+        }
+      }
+
+      const response = {
+        success: true,
+        session: session.toObject(),
+        metrics: metrics.toObject(),
+        welcomeMessage,
+        businessHours: {
+          isOpen: isBusinessHours,
+          info: businessHours ? businessHours.toObject() : null
+        },
+        userTracking: {
+          isAuthenticated,
+          isGuest: !isAuthenticated && !!guestUserId,
+          trackingId: !isAuthenticated && guestUserId ? guestUserId.toString() : userId,
+          userInfo
         }
       };
 
-      // Create the session
-      const session = new ChatSession(sessionData);
-      await session.save();
-
-      // Create metrics for the session
-      const sessionMetrics = new ChatMetrics({
-        sessionId: session._id,
-        userId: userId || null,
-        guestUserId: guestUserId || null,
-        sessionMetrics: {
-          startTime: new Date(),
-          endTime: null,
-          duration: 0
-        },
-        messageCount: {
-          total: 0,
-          userMessages: 0,
-          agentMessages: 0,
-          botMessages: 0
-        }
-      });
-      await sessionMetrics.save();
-
-      // Send initial bot message if it's a bot session
-      if (sessionType === 'bot') {
-        await this.sendInitialBotMessage(session, initialMessage);
-      }
-
-      logWithIcon.success('✅ Chat session created successfully:', {
-        sessionId: session._id,
-        userType: userId ? 'authenticated' : 'guest',
-        userEmail: userInfo.email,
-        firstName: userInfo.firstName
-      });
-
+      logWithIcon.success(`Chat session created for ${isAuthenticated ? 'authenticated' : 'guest'} user`);
+      
       res.status(201).json({
         success: true,
         message: 'Chat session created successfully',
-        data: session
+        data: response
       });
 
     } catch (error) {
-      logWithIcon.error('❌ Error creating chat session:', error);
-      
-      // Handle specific errors
-      if (error.name === 'ValidationError') {
-        return res.status(400).json({
-          success: false,
-          message: 'Validation error',
-          errors: Object.values(error.errors).map(err => err.message)
-        });
-      }
-
+      logWithIcon.error('Error creating chat session:', error);
       res.status(500).json({
         success: false,
-        message: 'Error creating chat session',
+        message: 'Failed to create chat session',
         error: error.message
       });
     }
   }
+
+  static async createWelcomeMessage(session, userInfo, isAuthenticated) {
+    try {
+      const ChatTemplate = require('../models/chatTemplateModel');
+      
+      // Try to get welcome template
+      const templates = await ChatTemplate.find({
+        templateType: 'welcome_message',
+        isActive: true
+      }).sort({ priority: -1 }).limit(1);
+
+      let messageContent, quickReplies;
+
+      if (templates.length > 0) {
+        const template = templates[0];
+        messageContent = template.render ? 
+          template.render({ firstName: userInfo.firstName || 'there' }) :
+          template.content;
+        
+        // Format quickReplies properly
+        quickReplies = Array.isArray(template.quickReplies) ? 
+          template.quickReplies.filter(reply => typeof reply === 'string') :
+          ['Search Jobs', 'About PSPL', 'Contact Support'];
+
+        // Update template usage
+        await ChatTemplate.findByIdAndUpdate(template._id, {
+          $inc: { 'usage.timesUsed': 1 },
+          'usage.lastUsed': new Date()
+        });
+      } else {
+        // Fallback welcome message
+        messageContent = `Hello ${userInfo.firstName || 'there'}! 👋 Welcome to PSPL Support. How can I assist you today?`;
+        quickReplies = ['Search for jobs', 'Partnership info', 'Application help', 'Talk to agent'];
+      }
+
+      // Create welcome message
+      const welcomeMessage = new ChatMessage({
+        sessionId: session._id,
+        senderId: session._id, // Use session ID as system sender
+        senderModel: 'System',
+        senderType: 'bot',
+        message: messageContent,
+        messageType: 'text',
+        metadata: {
+          quickReplies: quickReplies,
+          isWelcomeMessage: true,
+          isGuestMessage: !isAuthenticated,
+          noEncryption: true // Skip encryption for welcome messages
+        }
+      });
+
+      await welcomeMessage.save();
+      logWithIcon.success('Welcome message created successfully');
+      
+      return welcomeMessage.toObject();
+    } catch (error) {
+      logWithIcon.error('Error creating welcome message:', error);
+      throw error;
+    }
+  }
+
+  static async getSessionById(req, res) {
+    try {
+        const { sessionId } = req.params;
+        const userId = req.user?.id;
+        const userRole = req.user?.role || 'user';
+
+        const session = await ChatSession.findById(sessionId)
+            .populate('userId', 'firstname lastname email')
+            .populate('guestUserId', 'firstName lastName email')
+            .populate('agentId', 'name email');
+
+        if (!session) {
+            return res.status(404).json({
+                success: false,
+                message: 'Chat session not found'
+            });
+        }
+
+        // Check authorization
+        const hasAccess = 
+            userRole === 'admin' ||
+            (userRole === 'agent' && session.agentId?.toString() === req.user.agentId) ||
+            (userRole === 'user' && session.userId?.toString() === userId);
+
+        if (!hasAccess) {
+            return res.status(403).json({
+                success: false,
+                message: 'Access denied to this chat session'
+            });
+        }
+
+        res.json({
+            success: true,
+            data: { session }
+        });
+
+    } catch (error) {
+        logWithIcon.error('Error getting session:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error retrieving chat session',
+            error: error.message
+        });
+    }
+  }
+
+  static async listSessions(req, res) {
+    try {
+        const { 
+            page = 1, 
+            limit = 10, 
+            status, 
+            sessionType,
+            guestOnly = false 
+        } = req.query;
+        
+        const userId = req.user?.id;
+        const userRole = req.user?.role || 'user';
+
+        let query = {};
+
+        // Apply role-based filtering
+        if (userRole === 'user') {
+            query.userId = userId;
+        } else if (userRole === 'agent') {
+            query.agentId = req.user.agentId;
+        }
+        // Admin can see all sessions
+
+        // Apply additional filters
+        if (status) query.status = status;
+        if (sessionType) query.sessionType = sessionType;
+        if (guestOnly === 'true') {
+            query.guestUserId = { $exists: true };
+            query.userId = null;
+        }
+
+        const sessions = await ChatSession.find(query)
+            .populate('userId', 'firstname lastname email')
+            .populate('guestUserId', 'firstName lastName email')
+            .populate('agentId', 'name email')
+            .sort({ createdAt: -1 })
+            .limit(limit * 1)
+            .skip((page - 1) * limit);
+
+        const total = await ChatSession.countDocuments(query);
+
+        res.json({
+            success: true,
+            data: {
+                sessions,
+                pagination: {
+                    currentPage: page,
+                    totalPages: Math.ceil(total / limit),
+                    totalSessions: total,
+                    hasNext: page < Math.ceil(total / limit),
+                    hasPrev: page > 1
+                }
+            }
+        });
+
+    } catch (error) {
+        logWithIcon.error('Error listing sessions:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error retrieving chat sessions',
+            error: error.message
+        });
+    }
+  }
+
+  static async updateSessionStatus(req, res) {
+    try {
+        const { sessionId } = req.params;
+        const { status, reason } = req.body;
+        const userId = req.user?.id;
+        const userRole = req.user?.role || 'user';
+
+        const session = await ChatSession.findById(sessionId);
+        if (!session) {
+            return res.status(404).json({
+                success: false,
+                message: 'Chat session not found'
+            });
+        }
+
+        // Check authorization
+        const hasAccess = 
+            userRole === 'admin' ||
+            (userRole === 'agent' && session.agentId?.toString() === req.user.agentId) ||
+            (userRole === 'user' && session.userId?.toString() === userId);
+
+        if (!hasAccess) {
+            return res.status(403).json({
+                success: false,
+                message: 'Access denied to modify this chat session'
+            });
+        }
+
+        const validStatuses = ['active', 'paused', 'closed', 'transferred'];
+        if (!validStatuses.includes(status)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid session status'
+            });
+        }
+
+        session.status = status;
+        if (reason) {
+            session.metadata = {
+                ...session.metadata,
+                statusChangeReason: reason,
+                statusChangedBy: userId,
+                statusChangedAt: new Date()
+            };
+        }
+
+        if (status === 'closed') {
+            session.endedAt = new Date();
+        }
+
+        await session.save();
+
+        res.json({
+            success: true,
+            message: 'Session status updated successfully',
+            data: { session }
+        });
+
+    } catch (error) {
+        logWithIcon.error('Error updating session status:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error updating session status',
+            error: error.message
+        });
+    }
+  }
+  
 
   // Get user's active chat session
   static async getUserActiveSession(req, res) {
@@ -680,6 +901,119 @@ class ChatSessionController {
     });
     
     return availableAgents > 0 ? Math.ceil((queueLength * avgSessionTime) / availableAgents) : 30;
+  }
+  static async getChatSessions(req, res) {
+    try {
+      const userId = req.user?.id;
+      const { guestEmail } = req.query; // For guest users
+      const { page = 1, limit = 10, status } = req.query;
+
+      let query = {};
+
+      if (userId) {
+        // Authenticated user
+        query.userId = userId;
+      } else if (guestEmail) {
+        // Guest user
+        const guestUser = await GuestUser.findOne({ email: guestEmail.toLowerCase() });
+        if (!guestUser) {
+          return res.status(404).json({
+            success: false,
+            message: 'Guest user not found'
+          });
+        }
+        query.guestUserId = guestUser._id;
+      } else {
+        return res.status(400).json({
+          success: false,
+          message: 'Either authentication or guest email is required'
+        });
+      }
+
+      if (status) {
+        query.status = status;
+      }
+
+      const sessions = await ChatSession.find(query)
+        .populate('agentId', 'firstname lastname email')
+        .sort({ createdAt: -1 })
+        .limit(limit * 1)
+        .skip((page - 1) * limit)
+        .lean();
+
+      const total = await ChatSession.countDocuments(query);
+
+      res.json({
+        success: true,
+        data: {
+          sessions,
+          pagination: {
+            currentPage: parseInt(page),
+            totalPages: Math.ceil(total / limit),
+            totalRecords: total
+          }
+        }
+      });
+    } catch (error) {
+      logWithIcon.error('Error fetching chat sessions:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Error fetching chat sessions',
+        error: error.message
+      });
+    }
+  }
+
+  // Get single chat session
+  static async getChatSession(req, res) {
+    try {
+      const { sessionId } = req.params;
+      const userId = req.user?.id;
+      const { guestEmail } = req.query;
+
+      const session = await ChatSession.findById(sessionId)
+        .populate('agentId', 'firstname lastname email')
+        .lean();
+
+      if (!session) {
+        return res.status(404).json({
+          success: false,
+          message: 'Chat session not found'
+        });
+      }
+
+      // Verify access rights
+      let hasAccess = false;
+      
+      if (userId) {
+        // Authenticated user
+        hasAccess = session.userId && session.userId.toString() === userId;
+      } else if (guestEmail) {
+        // Guest user
+        const guestUser = await GuestUser.findOne({ email: guestEmail.toLowerCase() });
+        hasAccess = guestUser && session.guestUserId && 
+                   session.guestUserId.toString() === guestUser._id.toString();
+      }
+
+      if (!hasAccess && req.user?.role !== 1) { // Allow admin access
+        return res.status(403).json({
+          success: false,
+          message: 'Access denied to this chat session'
+        });
+      }
+
+      res.json({
+        success: true,
+        data: session
+      });
+    } catch (error) {
+      logWithIcon.error('Error fetching chat session:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Error fetching chat session',
+        error: error.message
+      });
+    }
   }
 }
 

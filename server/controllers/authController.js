@@ -82,8 +82,8 @@ module.exports = {
             smtpTransport({
               service: "gmail",
               host: "smtp.gmail.com",
-              port: 465,
-              secure: true,
+              port: 587,
+              secure: false,
               auth: {
                 user: process.env.EMAIL_NOTIFICATION_USER,
                 pass: process.env.EMAIL_NOTIFICATION_PASS,

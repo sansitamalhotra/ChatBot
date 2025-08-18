@@ -181,7 +181,7 @@ Object.values(staticPaths).forEach(dirPath => {
 // Verify frontend build path exists and has content
 if (fs.existsSync(staticPaths.frontend)) {
   const buildFiles = fs.readdirSync(staticPaths.frontend);
-  console.log(`Frontend Build Directory Content: ${buildFiles.length} files found`);
+  logWithIcon.clipboard(`Frontend Build Directory Content: ${buildFiles.length} files found`);
   if (buildFiles.length === 0) {
     console.warn('WARNING: Frontend Build Directory Exist But is Empty!');
   }
@@ -197,7 +197,7 @@ Object.entries(staticPaths).forEach(([key, dirPath]) => {
       fallthrough: true,
       maxAge: 86400000 // Cache for 24 hours
     }));
-    console.log(`Serving ${key} at ${urlPath} from ${dirPath}`);
+    logWithIcon.broadcast(`Serving ${key} at ${urlPath} from ${dirPath}`);
   }
 });
 // Health check endpoint
@@ -294,7 +294,7 @@ logWithIcon.error(`[ERROR] ${req.method} ${req.path}: ${err.stack || err}`);
   
   // If error is related to static files
   if (req.path.startsWith('/uploads/')) {
-    console.error(`Static file error for path: ${req.path}`);
+    logWithIcon.error(`Static file error for path: ${req.path}`);
   }
   
   res.status(statusCode).json({
