@@ -69,8 +69,7 @@ const ChatBotIcon = () => {
   const [guestFormSubmitted, setGuestFormSubmitted] = useState(false);
   const [guestFormErrors, setGuestFormErrors] = useState({});
   const [defaultMessagesLoaded, setDefaultMessagesLoaded] = useState(false);
-  const [hasUserSentMessage, setHasUserSentMessage] = useState(false); // NEW: Track if user has sent a message
-  const [guestFormCanceled, setGuestFormCanceled] = useState(false);
+  const [hasUserSentMessage, setHasUserSentMessage] = useState(false);
   
   const [pendingMessages, setPendingMessages] = useState(new Set());
   
@@ -110,6 +109,73 @@ const ChatBotIcon = () => {
     () => STORAGE_MESSAGES_PREFIX + (session?._id || session?.id || "guest"),
     [session]
   );
+
+  // FIXED: Add proper modal reset function
+  const resetGuestForm = useCallback(() => {
+    setShowGuestForm(false);
+    setGuestFormErrors({});
+    setIsSubmittingGuest(false);
+    // Don't reset guestInfo data as user might want to retry
+  }, []);
+
+  // FIXED: Add proper form cancellation that clears everything
+  const cancelGuestForm = useCallback(() => {
+    setShowGuestForm(false);
+    setGuestFormErrors({});
+    setIsSubmittingGuest(false);
+    setGuestFormSubmitted(false);
+    
+    // Clear any pending state
+    setHasUserSentMessage(false);
+    
+    // Remove the last user message if it was added before form submission
+    setMessages(prev => {
+      const lastMessage = prev[prev.length - 1];
+      if (lastMessage && lastMessage.from === 'user' && !guestFormSubmitted) {
+        return prev.slice(0, -1);
+      }
+      return prev;
+    });
+    
+    // Clear localStorage guest info
+    try {
+      localStorage.removeItem(STORAGE_USER_KEY);
+    } catch (error) {
+      console.warn("Failed to clear guest info from localStorage:", error);
+    }
+    
+    // Reset guest info
+    setGuestInfo({
+      firstName: '',
+      lastName: '',
+      email: '',
+      phone: ''
+    });
+    
+    console.log('Guest form cancelled and state reset');
+  }, [guestFormSubmitted]);
+
+  // FIXED: Enhanced modal overlay click handler
+  const handleModalOverlayClick = useCallback((e) => {
+    // Only close if clicking directly on the overlay (not on modal content)
+    if (e.target === e.currentTarget && !isSubmittingGuest) {
+      resetGuestForm();
+    }
+  }, [isSubmittingGuest, resetGuestForm]);
+
+  // FIXED: Enhanced ESC key handler
+  useEffect(() => {
+    const handleEscKey = (e) => {
+      if (e.key === 'Escape' && showGuestForm && !isSubmittingGuest) {
+        resetGuestForm();
+      }
+    };
+
+    if (showGuestForm) {
+      document.addEventListener('keydown', handleEscKey);
+      return () => document.removeEventListener('keydown', handleEscKey);
+    }
+  }, [showGuestForm, isSubmittingGuest, resetGuestForm]);
 
   // Load persisted input text on mount
   useEffect(() => {
@@ -397,6 +463,140 @@ const ChatBotIcon = () => {
     handleIncomingMessage
   ]);
 
+  // FIXED: Enhanced form validation with better error handling
+  const validateGuestForm = useCallback(() => {
+    const errors = {};
+    
+    if (!guestInfo.firstName.trim()) {
+      errors.firstName = 'First name is required';
+    } else if (guestInfo.firstName.trim().length < 2) {
+      errors.firstName = 'First name must be at least 2 characters';
+    }
+    
+    if (!guestInfo.email.trim()) {
+      errors.email = 'Email is required';
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(guestInfo.email.trim())) {
+      errors.email = 'Please enter a valid email address';
+    }
+    
+    if (guestInfo.phone && guestInfo.phone.trim()) {
+      // More flexible phone validation
+      const phoneRegex = /^[\d\s+\-()\.]+$/;
+      if (!phoneRegex.test(guestInfo.phone)) {
+        errors.phone = 'Please enter a valid phone number';
+      }
+    }
+    
+    return errors;
+  }, [guestInfo]);
+
+  // FIXED: Enhanced guest form change handler with real-time validation clearing
+  const handleGuestFormChange = useCallback((e) => {
+    const { name, value } = e.target;
+    
+    setGuestInfo(prev => ({
+      ...prev,
+      [name]: value
+    }));
+    
+    // Clear specific field error when user starts typing
+    if (guestFormErrors[name]) {
+      setGuestFormErrors(prev => {
+        const newErrors = { ...prev };
+        delete newErrors[name];
+        return newErrors;
+      });
+    }
+    
+    // Clear submit error when user makes changes
+    if (guestFormErrors.submit) {
+      setGuestFormErrors(prev => {
+        const newErrors = { ...prev };
+        delete newErrors.submit;
+        return newErrors;
+      });
+    }
+  }, [guestFormErrors]);
+
+  // FIXED: Enhanced submit function with better error handling
+  const submitGuestForm = useCallback(async () => {
+    const errors = validateGuestForm();
+    
+    if (Object.keys(errors).length > 0) {
+      setGuestFormErrors(errors);
+      return;
+    }
+
+    setIsSubmittingGuest(true);
+    setGuestFormErrors({}); // Clear any previous errors
+    
+    try {
+      const response = await API.post('/api/v1/guestUsers/create-guest-user', {
+        firstName: guestInfo.firstName.trim(),
+        lastName: guestInfo.lastName.trim(),
+        email: guestInfo.email.trim(),
+        phone: guestInfo.phone.trim()
+      });
+      
+      if (response.data.success) {
+        const { firstName, lastName, email, phone } = response.data.data;
+        
+        // Update guest info with server response
+        setGuestInfo({ firstName, lastName, email, phone });
+        setGuestFormSubmitted(true);
+        setShowGuestForm(false);
+        setGuestFormErrors({});
+        
+        // Persist to localStorage
+        try {
+          localStorage.setItem(STORAGE_USER_KEY, JSON.stringify({
+            firstName,
+            lastName,
+            email,
+            phone
+          }));
+        } catch (error) {
+          console.warn("Failed to save guest info to localStorage:", error);
+        }
+        
+        // Create session and send pending message
+        console.log('Guest form submitted, creating session...');
+        if (socket && socket.connected && !session) {
+          await createSession();
+        }
+        
+        // Send the last user message after form submission
+        const lastUserMessage = messages[messages.length - 1];
+        if (lastUserMessage && lastUserMessage.from === 'user') {
+          console.log('Sending guest user message to server after form submission...');
+          // Small delay to ensure session is created
+          setTimeout(() => {
+            if (socket && socket.connected && session) {
+              socket.emit("message:send", {
+                sessionId: session?._id || session?.id,
+                message: lastUserMessage.text,
+                messageType: "text",
+              });
+            }
+          }, 1000);
+        }
+        
+        logWithIcon.success('Guest user created and session initialized');
+      } else {
+        throw new Error(response.data.message || 'Failed to create guest user');
+      }
+    } catch (error) {
+      console.error("Error saving guest user:", error);
+      setGuestFormErrors({
+        submit: error.response?.data?.message || 
+                 error.message || 
+                 'Failed to save guest information. Please try again.'
+      });
+    } finally {
+      setIsSubmittingGuest(false);
+    }
+  }, [guestInfo, validateGuestForm, socket, session, messages, createSession]);
+
   /** --- FIXED: Send message with immediate guest form trigger --- **/
   const sendMessage = useCallback(() => {
     if (!input.trim()) return;
@@ -533,27 +733,6 @@ const ChatBotIcon = () => {
     );
   };
 
-  /** --- Form Validation --- **/
-  const validateGuestForm = () => {
-    const errors = {};
-    
-    if (!guestInfo.firstName.trim()) {
-      errors.firstName = 'First name is required';
-    }
-    
-    if (!guestInfo.email.trim()) {
-      errors.email = 'Email is required';
-    } else if (!/\S+@\S+\.\S+/.test(guestInfo.email)) {
-      errors.email = 'Please enter a valid email';
-    }
-    
-    if (guestInfo.phone && !/^[\d\s+\-()]+$/.test(guestInfo.phone)) {
-      errors.phone = 'Please enter a valid phone number';
-    }
-    
-    return errors;
-  };
-
   /** --- FIXED: Initialize chat session --- **/
   const initializeChatSession = useCallback(async () => {
     console.log('Initializing chat session...', {
@@ -642,102 +821,7 @@ const ChatBotIcon = () => {
     }
   };
 
-  const handleGuestFormChange = (e) => {
-    const { name, value } = e.target;
-    setGuestInfo({
-      ...guestInfo,
-      [name]: value
-    });
-    
-    if (guestFormErrors[name]) {
-      setGuestFormErrors({
-        ...guestFormErrors,
-        [name]: ''
-      });
-    }
-  };
-
-  /** --- Handle guest form cancellation --- **/
-  const handleCancelGuestForm = () => {
-    setShowGuestForm(false);
-    setGuestFormCanceled(true);
-    setGuestFormErrors({});
-    // Reset form data to clear any partially entered information
-    setGuestInfo({
-      firstName: '',
-      lastName: '',
-      email: '',
-      phone: ''
-    });
-  };
-
-  /** --- FIXED: Submit guest form and create session, then send pending message --- **/
-  const submitGuestForm = async () => {
-    const errors = validateGuestForm();
-    
-    if (Object.keys(errors).length > 0) {
-      setGuestFormErrors(errors);
-      return;
-    }
-
-    setIsSubmittingGuest(true);
-    
-    try {
-      const response = await API.post('/api/v1/guestUsers/create-guest-user', guestInfo);
-      
-      if (response.data.success) {
-        const { firstName, lastName, email, phone } = response.data.data;
-        
-        setGuestInfo({ firstName, lastName, email, phone });
-        setGuestFormSubmitted(true);
-        setShowGuestForm(false);
-        setGuestFormErrors({});
-        
-        try {
-          localStorage.setItem(STORAGE_USER_KEY, JSON.stringify({
-            firstName,
-            lastName,
-            email,
-            phone
-          }));
-        } catch (error) {
-          console.warn("Failed to save guest info to localStorage:", error);
-        }
-        
-        // Create session immediately after guest form submission
-        console.log('Guest form submitted, creating session...');
-        if (socket && socket.connected && !session) {
-          await createSession();
-        }
-        
-        // Send any pending user messages to the server
-        const lastUserMessage = messages[messages.length - 1];
-        if (lastUserMessage && lastUserMessage.from === 'user') {
-          console.log('Sending guest user message to server after form submission...');
-          if (socket && socket.connected) {
-            setTimeout(() => {
-              socket.emit("message:send", {
-                sessionId: session?._id || session?.id,
-                message: lastUserMessage.text,
-                messageType: "text",
-              });
-            }, 1000); // Small delay to ensure session is created
-          }
-        }
-        
-        logWithIcon.success('Guest user created and session initialized');
-      }
-    } catch (error) {
-      console.error("Error saving guest user:", error);
-      setGuestFormErrors({
-        submit: error.response?.data?.message || 'Failed to save guest information. Please try again.'
-      });
-    } finally {
-      setIsSubmittingGuest(false);
-    }
-  };
-
-  // FIXED: Trigger guest form when it should show - but not if user canceled it
+  // FIXED: Trigger guest form when it should show
   useEffect(() => {
     if (!userFromAuth && !guestFormSubmitted && hasUserSentMessage && !showGuestForm && !guestFormCanceled) {
       console.log('Triggering guest form - conditions met');
@@ -825,62 +909,263 @@ const ChatBotIcon = () => {
         </div>
       )}
 
-      {/* FIXED: Improved Guest Form with better UX/UI */}
+      {/* FIXED: Guest Form Modal with proper event handling and styling */}
       {showGuestForm && (
-        <div className="guest-form-overlay">
-          <div className="guest-form-modal">
-            <div className="guest-form-header">
-              <h2>Let's get to know you!</h2>
-              <p>Please provide your details to continue chatting with our support team.</p>
+        <div 
+          className={`modal-overlay ${isSubmittingGuest ? 'submitting' : ''}`}
+          onClick={handleModalOverlayClick}
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 9999,
+            padding: '1rem',
+            backdropFilter: 'blur(4px)'
+          }}
+        >
+          <div 
+            className="modal-container" 
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              backgroundColor: 'white',
+              borderRadius: '16px',
+              maxWidth: '480px',
+              width: '100%',
+              maxHeight: '90vh',
+              overflow: 'hidden',
+              boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
+              position: 'relative',
+              animation: 'modalSlideIn 0.3s ease-out'
+            }}
+          >
+            {/* Enhanced Header */}
+            <div className="modal-header" style={{
+              padding: '2rem 2rem 1rem',
+              textAlign: 'center',
+              background: 'linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)',
+              borderBottom: '1px solid #e2e8f0',
+              position: 'relative'
+            }}>
+              {/* Close button in top-right corner */}
+              <button
+                onClick={resetGuestForm}
+                disabled={isSubmittingGuest}
+                style={{
+                  position: 'absolute',
+                  top: '1rem',
+                  right: '1rem',
+                  background: 'none',
+                  border: 'none',
+                  fontSize: '1.25rem',
+                  color: '#64748b',
+                  cursor: isSubmittingGuest ? 'not-allowed' : 'pointer',
+                  width: '32px',
+                  height: '32px',
+                  borderRadius: '50%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  transition: 'all 0.2s ease',
+                  opacity: isSubmittingGuest ? 0.5 : 1
+                }}
+                onMouseEnter={(e) => {
+                  if (!isSubmittingGuest) {
+                    e.target.style.backgroundColor = '#f1f5f9';
+                    e.target.style.color = '#374151';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!isSubmittingGuest) {
+                    e.target.style.backgroundColor = 'transparent';
+                    e.target.style.color = '#64748b';
+                  }
+                }}
+              >
+                <i className="fas fa-times" onClick={cancelGuestForm}></i>
+              </button>
+
+              <div className="modal-header-content">
+                <div className="modal-icon" style={{
+                  width: '48px',
+                  height: '48px',
+                  backgroundColor: '#3b82f6',
+                  borderRadius: '12px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  margin: '0 auto 1rem',
+                  color: 'white',
+                  fontSize: '1.5rem'
+                }}>
+                  <i className="fas fa-user-plus"></i>
+                </div>
+                <h2 className="modal-title" style={{
+                  fontSize: '1.5rem',
+                  fontWeight: '700',
+                  color: '#1e293b',
+                  margin: '0 0 0.5rem'
+                }}>
+                  Let's get started!
+                </h2>
+                <p className="modal-subtitle" style={{
+                  color: '#64748b',
+                  fontSize: '0.95rem',
+                  lineHeight: '1.5',
+                  margin: 0
+                }}>
+                  Help us provide you with personalized assistance by sharing a few details.
+                </p>
+              </div>
             </div>
-            
-            <div className="guest-form-content">
+
+            {/* Enhanced Form Body */}
+            <div className="modal-body" style={{
+              padding: '1.5rem 2rem',
+              maxHeight: '400px',
+              overflowY: 'auto'
+            }}>
               {guestFormErrors.submit && (
-                <div className="guest-form-error">
+                <div className="submit-error" style={{
+                  backgroundColor: '#fef2f2',
+                  border: '1px solid #fecaca',
+                  borderRadius: '8px',
+                  padding: '0.75rem',
+                  marginBottom: '1rem',
+                  color: '#dc2626',
+                  fontSize: '0.875rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem'
+                }}>
                   <i className="fas fa-exclamation-triangle"></i>
-                  {guestFormErrors.submit}
+                  <div>
+                    <strong>Unable to proceed:</strong> {guestFormErrors.submit}
+                  </div>
                 </div>
               )}
-              
-              <div className="guest-form-row">
-                <div className="guest-form-field">
-                  <label htmlFor="guest-first-name">
-                    First Name <span className="required">*</span>
-                  </label>
-                  <input
-                    id="guest-first-name"
-                    type="text"
-                    name="firstName"
-                    value={guestInfo.firstName}
-                    onChange={handleGuestFormChange}
-                    disabled={isSubmittingGuest}
-                    placeholder="Enter your first name"
-                    className={guestFormErrors.firstName ? 'error' : ''}
-                    autoComplete="given-name"
-                  />
-                  {guestFormErrors.firstName && (
-                    <span className="field-error">{guestFormErrors.firstName}</span>
-                  )}
-                </div>
-                
-                <div className="guest-form-field">
-                  <label htmlFor="guest-last-name">Last Name</label>
-                  <input
-                    id="guest-last-name"
-                    type="text"
-                    name="lastName"
-                    value={guestInfo.lastName}
-                    onChange={handleGuestFormChange}
-                    disabled={isSubmittingGuest}
-                    placeholder="Enter your last name"
-                    autoComplete="family-name"
-                  />
-                </div>
+
+              <div className="form-group" style={{ marginBottom: '1rem' }}>
+                <label className="form-label" style={{
+                  display: 'block',
+                  fontSize: '0.875rem',
+                  fontWeight: '600',
+                  color: '#374151',
+                  marginBottom: '0.5rem'
+                }}>
+                  First Name <span className="required" style={{ color: '#dc2626' }}>*</span>
+                </label>
+                <input
+                  type="text"
+                  name="firstName"
+                  value={guestInfo.firstName}
+                  onChange={handleGuestFormChange}
+                  disabled={isSubmittingGuest}
+                  className={`form-input ${
+                    guestFormErrors.firstName ? 'error' : 
+                    guestInfo.firstName.trim() ? 'success' : ''
+                  }`}
+                  placeholder="Enter your first name"
+                  autoComplete="given-name"
+                  required
+                  style={{
+                    width: '100%',
+                    padding: '0.75rem',
+                    border: `2px solid ${
+                      guestFormErrors.firstName ? '#dc2626' :
+                      guestInfo.firstName.trim() ? '#10b981' : '#d1d5db'
+                    }`,
+                    borderRadius: '8px',
+                    fontSize: '0.95rem',
+                    transition: 'border-color 0.2s, box-shadow 0.2s',
+                    outline: 'none',
+                    opacity: isSubmittingGuest ? 0.7 : 1
+                  }}
+                  onFocus={(e) => {
+                    if (!guestFormErrors.firstName) {
+                      e.target.style.borderColor = '#3b82f6';
+                      e.target.style.boxShadow = '0 0 0 3px rgba(59, 130, 246, 0.1)';
+                    }
+                  }}
+                  onBlur={(e) => {
+                    e.target.style.borderColor = guestFormErrors.firstName ? '#dc2626' :
+                      guestInfo.firstName.trim() ? '#10b981' : '#d1d5db';
+                    e.target.style.boxShadow = 'none';
+                  }}
+                />
+                {guestFormErrors.firstName && (
+                  <div className="error-message" style={{
+                    color: '#dc2626',
+                    fontSize: '0.8rem',
+                    marginTop: '0.25rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.25rem'
+                  }}>
+                    <i className="fas fa-exclamation-circle" style={{ fontSize: '0.75rem' }}></i>
+                    {guestFormErrors.firstName}
+                  </div>
+                )}
               </div>
-              
-              <div className="guest-form-field">
-                <label htmlFor="guest-email">
-                  Email Address <span className="required">*</span>
+
+              <div className="form-group" style={{ marginBottom: '1rem' }}>
+                <label className="form-label" style={{
+                  display: 'block',
+                  fontSize: '0.875rem',
+                  fontWeight: '600',
+                  color: '#374151',
+                  marginBottom: '0.5rem'
+                }}>
+                  Last Name
+                </label>
+                <input
+                  type="text"
+                  name="lastName"
+                  value={guestInfo.lastName}
+                  onChange={handleGuestFormChange}
+                  disabled={isSubmittingGuest}
+                  className={`form-input ${
+                    guestInfo.lastName.trim() ? 'success' : ''
+                  }`}
+                  placeholder="Enter your last name"
+                  autoComplete="family-name"
+                  style={{
+                    width: '100%',
+                    padding: '0.75rem',
+                    border: `2px solid ${
+                      guestInfo.lastName.trim() ? '#10b981' : '#d1d5db'
+                    }`,
+                    borderRadius: '8px',
+                    fontSize: '0.95rem',
+                    transition: 'border-color 0.2s, box-shadow 0.2s',
+                    outline: 'none',
+                    opacity: isSubmittingGuest ? 0.7 : 1
+                  }}
+                  onFocus={(e) => {
+                    e.target.style.borderColor = '#3b82f6';
+                    e.target.style.boxShadow = '0 0 0 3px rgba(59, 130, 246, 0.1)';
+                  }}
+                  onBlur={(e) => {
+                    e.target.style.borderColor = guestInfo.lastName.trim() ? '#10b981' : '#d1d5db';
+                    e.target.style.boxShadow = 'none';
+                  }}
+                />
+              </div>
+
+              <div className="form-group" style={{ marginBottom: '1rem' }}>
+                <label className="form-label" style={{
+                  display: 'block',
+                  fontSize: '0.875rem',
+                  fontWeight: '600',
+                  color: '#374151',
+                  marginBottom: '0.5rem'
+                }}>
+                  Email Address <span className="required" style={{ color: '#dc2626' }}>*</span>
                 </label>
                 <input
                   id="guest-email"
@@ -889,17 +1174,63 @@ const ChatBotIcon = () => {
                   value={guestInfo.email}
                   onChange={handleGuestFormChange}
                   disabled={isSubmittingGuest}
-                  placeholder="Enter your email address"
-                  className={guestFormErrors.email ? 'error' : ''}
+                  className={`form-input ${
+                    guestFormErrors.email ? 'error' : 
+                    guestInfo.email.trim() && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(guestInfo.email) ? 'success' : ''
+                  }`}
+                  placeholder="your.email@example.com"
                   autoComplete="email"
+                  required
+                  style={{
+                    width: '100%',
+                    padding: '0.75rem',
+                    border: `2px solid ${
+                      guestFormErrors.email ? '#dc2626' :
+                      guestInfo.email.trim() && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(guestInfo.email) ? '#10b981' : '#d1d5db'
+                    }`,
+                    borderRadius: '8px',
+                    fontSize: '0.95rem',
+                    transition: 'border-color 0.2s, box-shadow 0.2s',
+                    outline: 'none',
+                    opacity: isSubmittingGuest ? 0.7 : 1
+                  }}
+                  onFocus={(e) => {
+                    if (!guestFormErrors.email) {
+                      e.target.style.borderColor = '#3b82f6';
+                      e.target.style.boxShadow = '0 0 0 3px rgba(59, 130, 246, 0.1)';
+                    }
+                  }}
+                  onBlur={(e) => {
+                    e.target.style.borderColor = guestFormErrors.email ? '#dc2626' :
+                      guestInfo.email.trim() && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(guestInfo.email) ? '#10b981' : '#d1d5db';
+                    e.target.style.boxShadow = 'none';
+                  }}
                 />
                 {guestFormErrors.email && (
-                  <span className="field-error">{guestFormErrors.email}</span>
+                  <div className="error-message" style={{
+                    color: '#dc2626',
+                    fontSize: '0.8rem',
+                    marginTop: '0.25rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.25rem'
+                  }}>
+                    <i className="fas fa-exclamation-circle" style={{ fontSize: '0.75rem' }}></i>
+                    {guestFormErrors.email}
+                  </div>
                 )}
               </div>
-              
-              <div className="guest-form-field">
-                <label htmlFor="guest-phone">Phone Number</label>
+
+              <div className="form-group" style={{ marginBottom: '0' }}>
+                <label className="form-label" style={{
+                  display: 'block',
+                  fontSize: '0.875rem',
+                  fontWeight: '600',
+                  color: '#374151',
+                  marginBottom: '0.5rem'
+                }}>
+                  Phone Number
+                </label>
                 <input
                   id="guest-phone"
                   type="tel"
@@ -907,41 +1238,154 @@ const ChatBotIcon = () => {
                   value={guestInfo.phone}
                   onChange={handleGuestFormChange}
                   disabled={isSubmittingGuest}
-                  placeholder="Enter your phone number (optional)"
-                  className={guestFormErrors.phone ? 'error' : ''}
+                  className={`form-input ${
+                    guestFormErrors.phone ? 'error' : 
+                    guestInfo.phone.trim() ? 'success' : ''
+                  }`}
+                  placeholder="+1 (555) 123-4567"
                   autoComplete="tel"
+                  style={{
+                    width: '100%',
+                    padding: '0.75rem',
+                    border: `2px solid ${
+                      guestFormErrors.phone ? '#dc2626' :
+                      guestInfo.phone.trim() ? '#10b981' : '#d1d5db'
+                    }`,
+                    borderRadius: '8px',
+                    fontSize: '0.95rem',
+                    transition: 'border-color 0.2s, box-shadow 0.2s',
+                    outline: 'none',
+                    opacity: isSubmittingGuest ? 0.7 : 1
+                  }}
+                  onFocus={(e) => {
+                    if (!guestFormErrors.phone) {
+                      e.target.style.borderColor = '#3b82f6';
+                      e.target.style.boxShadow = '0 0 0 3px rgba(59, 130, 246, 0.1)';
+                    }
+                  }}
+                  onBlur={(e) => {
+                    e.target.style.borderColor = guestFormErrors.phone ? '#dc2626' :
+                      guestInfo.phone.trim() ? '#10b981' : '#d1d5db';
+                    e.target.style.boxShadow = 'none';
+                  }}
                 />
                 {guestFormErrors.phone && (
-                  <span className="field-error">{guestFormErrors.phone}</span>
+                  <div className="error-message" style={{
+                    color: '#dc2626',
+                    fontSize: '0.8rem',
+                    marginTop: '0.25rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.25rem'
+                  }}>
+                    <i className="fas fa-exclamation-circle" style={{ fontSize: '0.75rem' }}></i>
+                    {guestFormErrors.phone}
+                  </div>
                 )}
               </div>
             </div>
-            
-            <div className="guest-form-actions">
+
+            {/* FIXED: Enhanced Actions with proper styling and handlers */}
+            <div className="modal-actions" style={{ 
+              display: 'flex',
+              gap: '0.75rem',
+              justifyContent: 'flex-end',
+              padding: '1.5rem 2rem 2rem',
+              backgroundColor: '#ffffff',
+              borderTop: '1px solid #f1f3f4',
+              flexShrink: 0,
+              position: 'relative',
+              zIndex: 10
+            }}>
               <button 
                 type="button"
-                className="guest-form-btn cancel"
-                onClick={handleCancelGuestForm}
+                onClick={cancelGuestForm} // FIXED: Use proper cancel handler
                 disabled={isSubmittingGuest}
+                className="btn btn-secondary"
+                style={{ 
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '0.5rem',
+                  padding: '0.875rem 1.5rem',
+                  borderRadius: '12px',
+                  fontSize: '0.95rem',
+                  fontWeight: '600',
+                  cursor: isSubmittingGuest ? 'not-allowed' : 'pointer',
+                  backgroundColor: '#f8fafc',
+                  color: '#64748b',
+                  border: '2px solid #e2e8f0',
+                  minHeight: '44px',
+                  minWidth: '100px',
+                  transition: 'all 0.2s ease',
+                  opacity: isSubmittingGuest ? 0.5 : 1
+                }}
+                onMouseEnter={(e) => {
+                  if (!isSubmittingGuest) {
+                    e.target.style.backgroundColor = '#f1f5f9';
+                    e.target.style.borderColor = '#cbd5e1';
+                    e.target.style.transform = 'translateY(-1px)';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!isSubmittingGuest) {
+                    e.target.style.backgroundColor = '#f8fafc';
+                    e.target.style.borderColor = '#e2e8f0';
+                    e.target.style.transform = 'translateY(0)';
+                  }
+                }}
               >
                 <i className="fas fa-times"></i>
-                Cancel
+                <span>Cancel</span>
               </button>
               <button 
                 type="button"
-                className="guest-form-btn submit"
                 onClick={submitGuestForm}
                 disabled={isSubmittingGuest}
+                className={`btn btn-primary ${isSubmittingGuest ? 'btn-loading' : ''}`}
+                style={{ 
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '0.5rem',
+                  padding: '0.875rem 1.5rem',
+                  borderRadius: '12px',
+                  fontSize: '0.95rem',
+                  fontWeight: '600',
+                  cursor: isSubmittingGuest ? 'not-allowed' : 'pointer',
+                  background: isSubmittingGuest 
+                    ? 'linear-gradient(135deg, #64748b 0%, #94a3b8 100%)' 
+                    : 'linear-gradient(135deg, #0b6ea9 0%, #1e88e5 100%)',
+                  color: 'white',
+                  border: '2px solid transparent',
+                  minHeight: '44px',
+                  minWidth: '120px',
+                  transition: 'all 0.2s ease',
+                  opacity: isSubmittingGuest ? 0.8 : 1,
+                  boxShadow: isSubmittingGuest ? 'none' : '0 4px 12px rgba(59, 130, 246, 0.15)'
+                }}
+                onMouseEnter={(e) => {
+                  if (!isSubmittingGuest) {
+                    e.target.style.transform = 'translateY(-1px)';
+                    e.target.style.boxShadow = '0 6px 16px rgba(59, 130, 246, 0.25)';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!isSubmittingGuest) {
+                    e.target.style.transform = 'translateY(0)';
+                    e.target.style.boxShadow = '0 4px 12px rgba(59, 130, 246, 0.15)';
+                  }
+                }}
               >
                 {isSubmittingGuest ? (
                   <>
                     <i className="fas fa-spinner fa-spin"></i>
-                    Submitting...
+                    <span>Submitting...</span>
                   </>
                 ) : (
                   <>
-                    <i className="fas fa-paper-plane"></i>
-                    Continue Chat
+                    <i className="fas fa-arrow-right"></i>
+                    <span>Continue Chat</span>
                   </>
                 )}
               </button>
@@ -949,6 +1393,63 @@ const ChatBotIcon = () => {
           </div>
         </div>
       )}
+
+      {/* FIXED: Add CSS for modal animations */}
+      <style jsx>{`
+        @keyframes modalSlideIn {
+          from {
+            opacity: 0;
+            transform: scale(0.95) translateY(-10px);
+          }
+          to {
+            opacity: 1;
+            transform: scale(1) translateY(0);
+          }
+        }
+
+        .modal-overlay {
+          backdrop-filter: blur(4px);
+          -webkit-backdrop-filter: blur(4px);
+        }
+
+        .modal-container {
+          animation: modalSlideIn 0.3s ease-out;
+        }
+
+        .form-input:focus {
+          border-color: #3b82f6 !important;
+          box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1) !important;
+        }
+
+        .form-input.error:focus {
+          border-color: #dc2626 !important;
+          box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.1) !important;
+        }
+
+        .btn:active {
+          transform: translateY(0) !important;
+        }
+
+        .btn:disabled {
+          cursor: not-allowed !important;
+          transform: none !important;
+        }
+
+        .submit-error {
+          animation: errorSlideIn 0.3s ease-out;
+        }
+
+        @keyframes errorSlideIn {
+          from {
+            opacity: 0;
+            transform: translateY(-10px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+      `}</style>
     </div>
   );
 };
