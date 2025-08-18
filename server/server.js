@@ -246,6 +246,7 @@ app.use("/api/v1/business-hours", require("./routes/businessHoursRoutes"));
 app.use("/api/v1/offices", require("./routes/officeRoutes"));
 
 app.use("/api/v1/businessHours", require("./routes/businessHoursRoutes"));
+app.use("/api/v1/guestUsers", require("./routes/guestUserRoutes"));
 
 // NOW serve frontend static files AFTER API routes are defined
 app.use(express.static(staticPaths.frontend));

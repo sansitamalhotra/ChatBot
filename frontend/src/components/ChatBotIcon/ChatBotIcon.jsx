@@ -70,6 +70,7 @@ const ChatBotIcon = () => {
   const [guestFormErrors, setGuestFormErrors] = useState({});
   const [defaultMessagesLoaded, setDefaultMessagesLoaded] = useState(false);
   const [hasUserSentMessage, setHasUserSentMessage] = useState(false); // NEW: Track if user has sent a message
+  const [guestFormCanceled, setGuestFormCanceled] = useState(false);
   
   const [pendingMessages, setPendingMessages] = useState(new Set());
   
@@ -425,11 +426,12 @@ const ChatBotIcon = () => {
     setMessages(prev => [...prev, userMessage]);
     setHasUserSentMessage(true);
     
-    // FIXED: For guests, show form immediately after first message
-    if (!userFromAuth && !guestFormSubmitted) {
+    // FIXED: For guests, show form immediately after first message (unless they canceled it)
+    if (!userFromAuth && !guestFormSubmitted && !guestFormCanceled) {
       console.log('Guest user sent first message, triggering form...', {
         userFromAuth: !!userFromAuth,
         guestFormSubmitted,
+        guestFormCanceled,
         hasUserSentMessage: true
       });
       // Use immediate state update instead of setTimeout for more reliable triggering
@@ -445,31 +447,34 @@ const ChatBotIcon = () => {
         messageType: "text",
       });
     }
-  }, [input, session, socket, userFromAuth, guestFormSubmitted]);
+  }, [input, session, socket, userFromAuth, guestFormSubmitted, guestFormCanceled]);
     
   const handleQuickReply = useCallback(
     (option) => {
       const value = option.value || option.text || option;
       const text = option.text || value;
       const messageId = `local_qr_${Date.now()}_${Math.random()}`;
-
-      console.log("Quick reply selected:", value);
-      if(value === "Search Jobs" || value === "Search for jobs" || value === "search_job" || value === "View all jobs") {
-        console.log("Search Jobs clicked:", value);
-        window.open("Search-Jobs", "_blank", "noopener,noreferrer");
-      }
-
-      // Add to pending messages
-      setPendingMessages(prev => new Set([...prev, messageId]));
+      
+      // Add message locally for immediate feedback
+      const userMessage = {
+        id: messageId,
+        from: "user",
+        text,
+        timestamp: Date.now(),
+        avatar: userFromAuth
+          ? getProfileImageSrc(userFromAuth?.photo)
+          : defaultAvatar,
+      };
       
       setMessages(prev => [...prev, userMessage]);
       setHasUserSentMessage(true);
       
-      // FIXED: For guests, show form immediately after quick reply
-      if (!userFromAuth && !guestFormSubmitted) {
+      // FIXED: For guests, show form immediately after quick reply (unless they canceled it)
+      if (!userFromAuth && !guestFormSubmitted && !guestFormCanceled) {
         console.log('Guest user selected option, triggering form...', {
           userFromAuth: !!userFromAuth,
           guestFormSubmitted,
+          guestFormCanceled,
           hasUserSentMessage: true
         });
         // Use immediate state update instead of setTimeout
@@ -486,7 +491,7 @@ const ChatBotIcon = () => {
         });
       }
     },
-    [session, socket, userFromAuth, guestFormSubmitted]
+    [session, socket, userFromAuth, guestFormSubmitted, guestFormCanceled]
   );
 
   const renderMessage = (m, index) => {
@@ -596,7 +601,7 @@ const ChatBotIcon = () => {
             ],
           },
         ]);
-      // }
+      //}
     }
     
     // FIXED: Create session for authenticated users immediately, for guests only after form submission
@@ -650,6 +655,20 @@ const ChatBotIcon = () => {
         [name]: ''
       });
     }
+  };
+
+  /** --- Handle guest form cancellation --- **/
+  const handleCancelGuestForm = () => {
+    setShowGuestForm(false);
+    setGuestFormCanceled(true);
+    setGuestFormErrors({});
+    // Reset form data to clear any partially entered information
+    setGuestInfo({
+      firstName: '',
+      lastName: '',
+      email: '',
+      phone: ''
+    });
   };
 
   /** --- FIXED: Submit guest form and create session, then send pending message --- **/
@@ -718,13 +737,13 @@ const ChatBotIcon = () => {
     }
   };
 
-  // FIXED: Trigger guest form when it should show
+  // FIXED: Trigger guest form when it should show - but not if user canceled it
   useEffect(() => {
-    if (!userFromAuth && !guestFormSubmitted && hasUserSentMessage && !showGuestForm) {
+    if (!userFromAuth && !guestFormSubmitted && hasUserSentMessage && !showGuestForm && !guestFormCanceled) {
       console.log('Triggering guest form - conditions met');
       setShowGuestForm(true);
     }
-  }, [userFromAuth, guestFormSubmitted, hasUserSentMessage, showGuestForm]);
+  }, [userFromAuth, guestFormSubmitted, hasUserSentMessage, showGuestForm, guestFormCanceled]);
 
   return (
     <div className="chatbot-wrapper">
@@ -806,162 +825,126 @@ const ChatBotIcon = () => {
         </div>
       )}
 
-      {/* FIXED: Guest Form - Use conditional rendering instead of Modal */}
+      {/* FIXED: Improved Guest Form with better UX/UI */}
       {showGuestForm && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          backgroundColor: 'rgba(0, 0, 0, 0.5)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 10000
-        }}>
-          <div style={{
-            backgroundColor: 'white',
-            padding: '2rem',
-            borderRadius: '8px',
-            maxWidth: '400px',
-            width: '90%',
-            maxHeight: '80vh',
-            overflow: 'auto'
-          }}>
-            <div className="guest-form">
-              <h2 style={{ marginTop: 0, marginBottom: '1rem' }}>Please provide your details to continue chatting</h2>
-              <p style={{ marginBottom: '1.5rem', color: '#666' }}>
-                We'd like to know who we're talking to so we can provide better assistance.
-              </p>
-              
+        <div className="guest-form-overlay">
+          <div className="guest-form-modal">
+            <div className="guest-form-header">
+              <h2>Let's get to know you!</h2>
+              <p>Please provide your details to continue chatting with our support team.</p>
+            </div>
+            
+            <div className="guest-form-content">
               {guestFormErrors.submit && (
-                <div className="error-message" style={{ color: 'red', marginBottom: '1rem', padding: '0.5rem', backgroundColor: '#fee', borderRadius: '4px' }}>
+                <div className="guest-form-error">
+                  <i className="fas fa-exclamation-triangle"></i>
                   {guestFormErrors.submit}
                 </div>
               )}
               
-              <div style={{ marginBottom: '1rem' }}>
-                <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>First Name *</label>
-                <input
-                  type="text"
-                  name="firstName"
-                  value={guestInfo.firstName}
-                  onChange={handleGuestFormChange}
-                  disabled={isSubmittingGuest}
-                  required
-                  style={{
-                    width: '100%',
-                    padding: '0.5rem',
-                    border: '1px solid #ccc',
-                    borderRadius: '4px',
-                    fontSize: '1rem'
-                  }}
-                />
-                {guestFormErrors.firstName && (
-                  <span style={{ color: 'red', fontSize: '0.8rem', display: 'block', marginTop: '0.25rem' }}>
-                    {guestFormErrors.firstName}
-                  </span>
-                )}
+              <div className="guest-form-row">
+                <div className="guest-form-field">
+                  <label htmlFor="guest-first-name">
+                    First Name <span className="required">*</span>
+                  </label>
+                  <input
+                    id="guest-first-name"
+                    type="text"
+                    name="firstName"
+                    value={guestInfo.firstName}
+                    onChange={handleGuestFormChange}
+                    disabled={isSubmittingGuest}
+                    placeholder="Enter your first name"
+                    className={guestFormErrors.firstName ? 'error' : ''}
+                    autoComplete="given-name"
+                  />
+                  {guestFormErrors.firstName && (
+                    <span className="field-error">{guestFormErrors.firstName}</span>
+                  )}
+                </div>
+                
+                <div className="guest-form-field">
+                  <label htmlFor="guest-last-name">Last Name</label>
+                  <input
+                    id="guest-last-name"
+                    type="text"
+                    name="lastName"
+                    value={guestInfo.lastName}
+                    onChange={handleGuestFormChange}
+                    disabled={isSubmittingGuest}
+                    placeholder="Enter your last name"
+                    autoComplete="family-name"
+                  />
+                </div>
               </div>
               
-              <div style={{ marginBottom: '1rem' }}>
-                <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>Last Name</label>
+              <div className="guest-form-field">
+                <label htmlFor="guest-email">
+                  Email Address <span className="required">*</span>
+                </label>
                 <input
-                  type="text"
-                  name="lastName"
-                  value={guestInfo.lastName}
-                  onChange={handleGuestFormChange}
-                  disabled={isSubmittingGuest}
-                  style={{
-                    width: '100%',
-                    padding: '0.5rem',
-                    border: '1px solid #ccc',
-                    borderRadius: '4px',
-                    fontSize: '1rem'
-                  }}
-                />
-              </div>
-              
-              <div style={{ marginBottom: '1rem' }}>
-                <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>Email *</label>
-                <input
+                  id="guest-email"
                   type="email"
                   name="email"
                   value={guestInfo.email}
                   onChange={handleGuestFormChange}
                   disabled={isSubmittingGuest}
-                  required
-                  style={{
-                    width: '100%',
-                    padding: '0.5rem',
-                    border: '1px solid #ccc',
-                    borderRadius: '4px',
-                    fontSize: '1rem'
-                  }}
+                  placeholder="Enter your email address"
+                  className={guestFormErrors.email ? 'error' : ''}
+                  autoComplete="email"
                 />
                 {guestFormErrors.email && (
-                  <span style={{ color: 'red', fontSize: '0.8rem', display: 'block', marginTop: '0.25rem' }}>
-                    {guestFormErrors.email}
-                  </span>
+                  <span className="field-error">{guestFormErrors.email}</span>
                 )}
               </div>
               
-              <div style={{ marginBottom: '1.5rem' }}>
-                <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>Phone</label>
+              <div className="guest-form-field">
+                <label htmlFor="guest-phone">Phone Number</label>
                 <input
+                  id="guest-phone"
                   type="tel"
                   name="phone"
                   value={guestInfo.phone}
                   onChange={handleGuestFormChange}
                   disabled={isSubmittingGuest}
-                  style={{
-                    width: '100%',
-                    padding: '0.5rem',
-                    border: '1px solid #ccc',
-                    borderRadius: '4px',
-                    fontSize: '1rem'
-                  }}
+                  placeholder="Enter your phone number (optional)"
+                  className={guestFormErrors.phone ? 'error' : ''}
+                  autoComplete="tel"
                 />
                 {guestFormErrors.phone && (
-                  <span style={{ color: 'red', fontSize: '0.8rem', display: 'block', marginTop: '0.25rem' }}>
-                    {guestFormErrors.phone}
-                  </span>
+                  <span className="field-error">{guestFormErrors.phone}</span>
                 )}
               </div>
-              
-              <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
-                <button 
-                  onClick={() => setShowGuestForm(false)}
-                  disabled={isSubmittingGuest}
-                  style={{
-                    padding: '10px 20px',
-                    backgroundColor: '#6c757d',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '4px',
-                    cursor: isSubmittingGuest ? 'not-allowed' : 'pointer',
-                    fontSize: '1rem'
-                  }}
-                >
-                  Cancel
-                </button>
-                <button 
-                  onClick={submitGuestForm}
-                  disabled={isSubmittingGuest}
-                  style={{
-                    padding: '10px 20px',
-                    backgroundColor: '#007bff',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '4px',
-                    cursor: isSubmittingGuest ? 'not-allowed' : 'pointer',
-                    fontSize: '1rem'
-                  }}
-                >
-                  {isSubmittingGuest ? 'Submitting...' : 'Continue Chat'}
-                </button>
-              </div>
+            </div>
+            
+            <div className="guest-form-actions">
+              <button 
+                type="button"
+                className="guest-form-btn cancel"
+                onClick={handleCancelGuestForm}
+                disabled={isSubmittingGuest}
+              >
+                <i className="fas fa-times"></i>
+                Cancel
+              </button>
+              <button 
+                type="button"
+                className="guest-form-btn submit"
+                onClick={submitGuestForm}
+                disabled={isSubmittingGuest}
+              >
+                {isSubmittingGuest ? (
+                  <>
+                    <i className="fas fa-spinner fa-spin"></i>
+                    Submitting...
+                  </>
+                ) : (
+                  <>
+                    <i className="fas fa-paper-plane"></i>
+                    Continue Chat
+                  </>
+                )}
+              </button>
             </div>
           </div>
         </div>

@@ -290,7 +290,250 @@
   overflow-x: auto;
 }
 
-/* ===== GUEST FORM ===== */
+/* ===== IMPROVED GUEST FORM STYLES ===== */
+.guest-form-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+  backdrop-filter: blur(2px);
+  animation: fadeIn 0.2s ease-out;
+}
+
+.guest-form-modal {
+  background: #fff;
+  border-radius: 16px;
+  max-width: 480px;
+  width: calc(100% - 32px);
+  max-height: calc(100vh - 64px);
+  overflow: hidden;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  animation: slideUp 0.3s ease-out;
+}
+
+.guest-form-header {
+  background: linear-gradient(135deg, #0b6ea9 0%, #1976d2 100%);
+  color: #fff;
+  padding: 24px;
+  text-align: center;
+}
+
+.guest-form-header h2 {
+  margin: 0 0 8px 0;
+  font-size: 22px;
+  font-weight: 600;
+}
+
+.guest-form-header p {
+  margin: 0;
+  font-size: 14px;
+  opacity: 0.9;
+  line-height: 1.4;
+}
+
+.guest-form-content {
+  padding: 24px;
+  overflow-y: auto;
+  max-height: calc(70vh - 140px);
+}
+
+.guest-form-error {
+  background: #fee;
+  border: 1px solid #fcc;
+  color: #c33;
+  padding: 12px 16px;
+  border-radius: 8px;
+  margin-bottom: 20px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.guest-form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.guest-form-field {
+  margin-bottom: 20px;
+}
+
+.guest-form-field label {
+  display: block;
+  margin-bottom: 6px;
+  font-weight: 600;
+  color: #333;
+  font-size: 14px;
+}
+
+.guest-form-field .required {
+  color: #e74c3c;
+}
+
+.guest-form-field input {
+  width: 100%;
+  padding: 12px 16px;
+  border: 2px solid #e1e5e9;
+  border-radius: 8px;
+  font-size: 14px;
+  transition: all 0.2s ease;
+  background: #fff;
+  box-sizing: border-box;
+}
+
+.guest-form-field input:focus {
+  outline: none;
+  border-color: #0b6ea9;
+  box-shadow: 0 0 0 3px rgba(11, 110, 169, 0.1);
+}
+
+.guest-form-field input.error {
+  border-color: #e74c3c;
+  background: #fef9f9;
+}
+
+.guest-form-field input:disabled {
+  background: #f8f9fa;
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.field-error {
+  color: #e74c3c;
+  font-size: 12px;
+  margin-top: 4px;
+  display: block;
+}
+
+.guest-form-actions {
+  display: flex;
+  gap: 12px;
+  padding: 20px 24px;
+  background: #f8f9fa;
+  border-top: 1px solid #e1e5e9;
+  justify-content: flex-end;
+}
+
+.guest-form-btn {
+  padding: 12px 24px;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 120px;
+  justify-content: center;
+}
+
+.guest-form-btn.cancel {
+  background: #6c757d;
+  color: #fff;
+}
+
+.guest-form-btn.cancel:hover:not(:disabled) {
+  background: #5a6268;
+  transform: translateY(-1px);
+}
+
+.guest-form-btn.submit {
+  background: linear-gradient(135deg, #0b6ea9 0%, #1976d2 100%);
+  color: #fff;
+}
+
+.guest-form-btn.submit:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(11, 110, 169, 0.3);
+}
+
+.guest-form-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none !important;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(40px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Mobile responsive adjustments for guest form */
+@media (max-width: 768px) {
+  .guest-form-modal {
+    width: calc(100% - 16px);
+    margin: 8px;
+    border-radius: 12px;
+  }
+  
+  .guest-form-row {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+  
+  .guest-form-header {
+    padding: 20px 16px;
+  }
+  
+  .guest-form-header h2 {
+    font-size: 20px;
+  }
+  
+  .guest-form-content {
+    padding: 16px;
+  }
+  
+  .guest-form-actions {
+    padding: 16px;
+    flex-direction: column-reverse;
+  }
+  
+  .guest-form-btn {
+    width: 100%;
+  }
+}
+
+@media (max-width: 480px) {
+  .guest-form-modal {
+    height: 100vh;
+    max-height: 100vh;
+    width: 100%;
+    margin: 0;
+    border-radius: 0;
+  }
+  
+  .guest-form-content {
+    max-height: calc(100vh - 200px);
+  }
+}
+
+/* ===== EXISTING GUEST FORM STYLES (keeping for backward compatibility) ===== */
 .guest-form {
   padding: 12px;
   background: #fff;
