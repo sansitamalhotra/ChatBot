@@ -14,7 +14,7 @@ Modal.setAppElement('#root');
 // Use environment variable or fallback to default
 const STORAGE_USER_KEY = process.env.REACT_APP_CHAT_STORAGE_USER_KEY || "chat_widget_userinfo_v1";
 const STORAGE_MESSAGES_PREFIX = process.env.REACT_APP_CHAT_STORAGE_MESSAGES_PREFIX || "chat_widget_messages_v1_";
-const STORAGE_INPUT_KEY = process.env.REACT_APP_CHAT_INPUT_KEY || "chat_widget_input_text"; // NEW: Input persistence key
+const STORAGE_INPUT_KEY = process.env.REACT_APP_CHAT_INPUT_KEY || "chat_widget_input_text";
 
 function timeAgo(ts) {
   if (!ts) return "";
@@ -69,8 +69,8 @@ const ChatBotIcon = () => {
   const [guestFormSubmitted, setGuestFormSubmitted] = useState(false);
   const [guestFormErrors, setGuestFormErrors] = useState({});
   const [defaultMessagesLoaded, setDefaultMessagesLoaded] = useState(false);
+  const [hasUserSentMessage, setHasUserSentMessage] = useState(false); // NEW: Track if user has sent a message
   
-  // NEW: Track pending messages to prevent duplicates
   const [pendingMessages, setPendingMessages] = useState(new Set());
   
   const [guestInfo, setGuestInfo] = useState({
@@ -94,23 +94,23 @@ const ChatBotIcon = () => {
     return guestFormSubmitted;
   }, [userFromAuth, guestFormSubmitted]);
 
-  // FIXED: Determine if user needs to fill guest form
-  const needsGuestForm = useMemo(() => {
-    const result = !userFromAuth && !userFormSubmitted;
-    logWithIcon.guest('Needs guest form:', {
+  // FIXED: Simplified guest form trigger logic
+  const shouldShowGuestForm = useMemo(() => {
+    const result = !userFromAuth && !guestFormSubmitted;
+    logWithIcon.guest('Should show guest form:', {
       userFromAuth: !!userFromAuth,
-      userFormSubmitted,
+      guestFormSubmitted,
       result
     });
     return result;
-  }, [userFromAuth, userFormSubmitted]);
+  }, [userFromAuth, guestFormSubmitted]);
 
   const storageKey = useMemo(
     () => STORAGE_MESSAGES_PREFIX + (session?._id || session?.id || "guest"),
     [session]
   );
 
-  // FIX 2: Load persisted input text on mount
+  // Load persisted input text on mount
   useEffect(() => {
     try {
       const savedInput = localStorage.getItem(STORAGE_INPUT_KEY);
@@ -122,8 +122,10 @@ const ChatBotIcon = () => {
     }
   }, []);
 
-  // FIX 2: Persist input text changes (debounced to avoid excessive writes)
+  // FIXED: Only persist input when chat is open and user is typing
   useEffect(() => {
+    if (!isOpen) return; // Don't persist when chat is closed
+    
     const timeoutId = setTimeout(() => {
       try {
         if (input && input.trim()) {
@@ -134,10 +136,10 @@ const ChatBotIcon = () => {
       } catch (error) {
         console.warn("Failed to save input to localStorage:", error);
       }
-    }, 300); // Debounce for 300ms
+    }, 300);
 
     return () => clearTimeout(timeoutId);
-  }, [input]);
+  }, [input, isOpen]);
 
   /** --- Load persisted guest + messages on mount --- **/
   useEffect(() => {
@@ -152,7 +154,6 @@ const ChatBotIcon = () => {
           phone: u.phone || ""
         });
         
-        // Set guest form as submitted if we have required fields
         const hasRequiredInfo = Boolean(u.firstName && u.email && u.firstName.trim() && u.email.trim());
         setGuestFormSubmitted(hasRequiredInfo);
         console.log('Loaded guest info from storage:', u, 'Form submitted:', hasRequiredInfo);
@@ -165,7 +166,15 @@ const ChatBotIcon = () => {
   useEffect(() => {
     try {
       const raw = localStorage.getItem(storageKey);
-      if (raw) setMessages(JSON.parse(raw));
+      if (raw) {
+        const loadedMessages = JSON.parse(raw);
+        setMessages(loadedMessages);
+        // Check if user has sent any messages from loaded history
+        const userMessageExists = loadedMessages.some(msg => msg.from === "user");
+        if (userMessageExists) {
+          setHasUserSentMessage(true);
+        }
+      }
     } catch (error) {
       console.warn("Failed to load messages from localStorage:", error);
     }
@@ -227,19 +236,17 @@ const ChatBotIcon = () => {
     [session, userFromAuth]
   );
 
-  // FIXED: Enhanced handleIncomingMessage with better duplicate prevention
   const handleIncomingMessage = useCallback(
     (rawMsg) => {
       const msg = normalizeMessage(rawMsg);
       if (!msg) return;
 
-      // Check if this message already exists (by ID or by content and timestamp)
       setMessages((prevMessages) => {
         const messageExists = prevMessages.some(existingMsg => 
           existingMsg.id === msg.id || 
           (existingMsg.text === msg.text && 
            existingMsg.from === msg.from && 
-           Math.abs(existingMsg.timestamp - msg.timestamp) < 1000) // Within 1 second
+           Math.abs(existingMsg.timestamp - msg.timestamp) < 1000)
         );
 
         if (messageExists) {
@@ -247,11 +254,9 @@ const ChatBotIcon = () => {
           return prevMessages;
         }
 
-        // Remove from pending if this is a confirmation of a sent message
         if (msg.from === 'user') {
           setPendingMessages(prev => {
             const newPending = new Set(prev);
-            // Remove any pending message with similar content
             for (const pendingId of prev) {
               if (pendingId.includes(msg.text.substring(0, 10))) {
                 newPending.delete(pendingId);
@@ -263,12 +268,6 @@ const ChatBotIcon = () => {
 
         return [...prevMessages, msg];
       });
-
-      // Only update quick replies for bot messages
-      if (msg.from === 'bot' && msg.quickReplies.length > 0) {
-        // Don't show quick replies in global footer - they'll be shown with the message
-        // setQuickReplies(msg.quickReplies);
-      }
 
       if (!isOpen) {
         setUnreadCount((n) => n + 1);
@@ -328,9 +327,7 @@ const ChatBotIcon = () => {
     let sessionData;
     const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
-    // FIXED: Proper session data creation based on user type
     if (userFromAuth) {
-      // For authenticated users - use their actual data
       console.log('Creating session for authenticated user:', userFromAuth.email);
       sessionData = {
         entryPoint: "widget",
@@ -340,18 +337,15 @@ const ChatBotIcon = () => {
         lastName: userFromAuth.lastname || userFromAuth.lastName,
         email: userFromAuth.email,
         phone: userFromAuth.phone || '',
-        // Don't send guestEmail for authenticated users
         metadata: {
           authenticatedUser: true,
           userId: userFromAuth._id || userFromAuth.id
         }
       };
     } else {
-      // For guest users - use guest info
       console.log('Creating session for guest user:', guestInfo);
       const { firstName, lastName, email, phone } = guestInfo;
       
-      // Save guest info to localStorage
       try {
         localStorage.setItem(
           STORAGE_USER_KEY,
@@ -369,7 +363,7 @@ const ChatBotIcon = () => {
         lastName,
         email,
         phone,
-        guestEmail: email, // This tells backend it's a guest user
+        guestEmail: email,
         metadata: {
           guestFirstName: firstName,
           guestLastName: lastName,
@@ -402,17 +396,14 @@ const ChatBotIcon = () => {
     handleIncomingMessage
   ]);
 
-  /** --- Send message --- FIXED to prevent duplicates **/
+  /** --- FIXED: Send message with immediate guest form trigger --- **/
   const sendMessage = useCallback(() => {
     if (!input.trim()) return;
     
     const text = input.trim();
     const messageId = `local_${Date.now()}_${Math.random()}`;
     
-    // Add to pending messages to track it
-    setPendingMessages(prev => new Set([...prev, messageId]));
-    
-    // Clear input state and localStorage immediately
+    // Clear input immediately
     setInput("");
     try {
       localStorage.removeItem(STORAGE_INPUT_KEY);
@@ -420,40 +411,39 @@ const ChatBotIcon = () => {
       console.warn("Failed to clear input from localStorage:", error);
     }
     
-    // Only send via socket, don't add to local messages
-    // The message will be added when it comes back from the server
-    if (socket && socket.connected) {
+    // Add message locally for immediate feedback
+    const userMessage = {
+      id: messageId,
+      from: "user",
+      text,
+      timestamp: Date.now(),
+      avatar: userFromAuth
+        ? getProfileImageSrc(userFromAuth?.photo)
+        : defaultAvatar,
+    };
+    
+    setMessages(prev => [...prev, userMessage]);
+    setHasUserSentMessage(true);
+    
+    // FIXED: For guests, show form immediately after first message
+    if (!userFromAuth && !guestFormSubmitted) {
+      console.log('Guest user sent first message, triggering form...', {
+        userFromAuth: !!userFromAuth,
+        guestFormSubmitted,
+        hasUserSentMessage: true
+      });
+      // Use immediate state update instead of setTimeout for more reliable triggering
+      setShowGuestForm(true);
+      return; // Don't send to server yet, wait for guest info
+    }
+    
+    // Send via socket if user is authenticated or guest info is already collected
+    if (socket && socket.connected && session) {
       socket.emit("message:send", {
         sessionId: session?._id || session?.id,
         message: text,
         messageType: "text",
       });
-    } else {
-      // If no socket connection, add locally as fallback
-      const draft = {
-        id: messageId,
-        from: "user",
-        text,
-        timestamp: Date.now(),
-        avatar: userFromAuth
-          ? getProfileImageSrc(userFromAuth?.photo)
-          : defaultAvatar,
-      };
-      setMessages((prev) => [...prev, draft]);
-      // Remove from pending since we added it locally
-      setPendingMessages(prev => {
-        const newPending = new Set(prev);
-        newPending.delete(messageId);
-        return newPending;
-      });
-    }
-    
-    // FIXED: Show guest form AFTER sending the first message for unauthenticated users
-    if (!userFromAuth && !guestFormSubmitted) {
-      console.log('Guest user sent first message, showing form for data collection...');
-      setTimeout(() => {
-        setShowGuestForm(true);
-      }, 500); // Small delay so user sees their message first
     }
   }, [input, session, socket, userFromAuth, guestFormSubmitted]);
     
@@ -463,39 +453,42 @@ const ChatBotIcon = () => {
       const text = option.text || value;
       const messageId = `local_qr_${Date.now()}_${Math.random()}`;
       
-      // Add to pending messages
-      setPendingMessages(prev => new Set([...prev, messageId]));
+      // Add message locally for immediate feedback
+      const userMessage = {
+        id: messageId,
+        from: "user",
+        text,
+        timestamp: Date.now(),
+        avatar: userFromAuth
+          ? getProfileImageSrc(userFromAuth?.photo)
+          : defaultAvatar,
+      };
       
-      // Clear any existing quick replies
-      // setQuickReplies([]);
+      setMessages(prev => [...prev, userMessage]);
+      setHasUserSentMessage(true);
       
-      // Send via socket only
+      // FIXED: For guests, show form immediately after quick reply
+      if (!userFromAuth && !guestFormSubmitted) {
+        console.log('Guest user selected option, triggering form...', {
+          userFromAuth: !!userFromAuth,
+          guestFormSubmitted,
+          hasUserSentMessage: true
+        });
+        // Use immediate state update instead of setTimeout
+        setShowGuestForm(true);
+        return; // Don't send to server yet, wait for guest info
+      }
+      
+      // Send via socket if user is authenticated or guest info is collected
       if (socket && socket.connected && session) {
         socket.emit("message:send", {
           sessionId: session._id || session.id,
           message: value,
           messageType: "option_selection",
         });
-      } else {
-        // Fallback if no socket
-        const draft = {
-          id: messageId,
-          from: "user",
-          text,
-          timestamp: Date.now(),
-          avatar: userFromAuth
-            ? getProfileImageSrc(userFromAuth?.photo)
-            : defaultAvatar,
-        };
-        setMessages((prev) => [...prev, draft]);
-        setPendingMessages(prev => {
-          const newPending = new Set(prev);
-          newPending.delete(messageId);
-          return newPending;
-        });
       }
     },
-    [session, socket, userFromAuth]
+    [session, socket, userFromAuth, guestFormSubmitted]
   );
 
   const renderMessage = (m, index) => {
@@ -558,8 +551,8 @@ const ChatBotIcon = () => {
     return errors;
   };
 
-  /** --- Initialize chat session and messages --- **/
-  const initializeChatSession = async () => {
+  /** --- FIXED: Initialize chat session --- **/
+  const initializeChatSession = useCallback(async () => {
     console.log('Initializing chat session...', {
       hasSession: !!session,
       hasSocket: !!socket,
@@ -568,9 +561,9 @@ const ChatBotIcon = () => {
       defaultMessagesLoaded
     });
     
-    // FIX 4: Load default messages only once and prevent duplicates
+    // Load default messages only once
     if (messages.length === 0 && !defaultMessagesLoaded) {
-      setDefaultMessagesLoaded(true); // Prevent future duplicate loads
+      setDefaultMessagesLoaded(true);
       
       const biz = await fetchBusinessHours();
       setBusinessInfo(biz);
@@ -608,19 +601,25 @@ const ChatBotIcon = () => {
       }
     }
     
-    // Create session only if user has submitted form/is authenticated
-    if (!session && socket && socket.connected && userFormSubmitted) {
-      console.log('Creating session...');
-      await createSession();
+    // FIXED: Create session for authenticated users immediately, for guests only after form submission
+    if (!session && socket && socket.connected) {
+      if (userFromAuth) {
+        // Authenticated users can create session immediately
+        console.log('Creating session for authenticated user...');
+        await createSession();
+      } else if (guestFormSubmitted) {
+        // Guest users only after form submission
+        console.log('Creating session for guest user after form submission...');
+        await createSession();
+      }
     }
-  };
+  }, [session, socket, userFormSubmitted, defaultMessagesLoaded, messages.length, createSession, userFromAuth, guestFormSubmitted]);
 
-  // FIX 1: Close chat when chat header is clicked
   const handleHeaderClick = () => {
     setIsOpen(false);
   };
 
-  /** --- Toggle Chat --- **/
+  /** --- FIXED: Toggle Chat with proper initialization --- **/
   const handleToggle = async () => {
     const next = !isOpen;
     setIsOpen(next);
@@ -630,22 +629,12 @@ const ChatBotIcon = () => {
       
       console.log('Debug - handleToggle:', {
         userFromAuth: !!userFromAuth,
-        needsGuestForm,
-        guestInfo,
-        userFormSubmitted
+        guestFormSubmitted,
+        userFormSubmitted,
+        hasUserSentMessage
       });
       
-      // FIXED: Show guest form only for unauthenticated users without guest info
-      if (needsGuestForm) {
-        console.log('Showing guest form...');
-        setShowGuestForm(true);
-        // Still initialize default messages even when showing form
-        await initializeChatSession();
-        return;
-      }
-      
-      // Initialize chat for authenticated users or users with guest info
-      console.log('Initializing chat...');
+      // Always initialize chat when opening - guest form will show after first message if needed
       await initializeChatSession();
     }
   };
@@ -657,7 +646,6 @@ const ChatBotIcon = () => {
       [name]: value
     });
     
-    // Clear specific error when user starts typing
     if (guestFormErrors[name]) {
       setGuestFormErrors({
         ...guestFormErrors,
@@ -666,6 +654,7 @@ const ChatBotIcon = () => {
     }
   };
 
+  /** --- FIXED: Submit guest form and create session, then send pending message --- **/
   const submitGuestForm = async () => {
     const errors = validateGuestForm();
     
@@ -682,13 +671,11 @@ const ChatBotIcon = () => {
       if (response.data.success) {
         const { firstName, lastName, email, phone } = response.data.data;
         
-        // Update local state
         setGuestInfo({ firstName, lastName, email, phone });
         setGuestFormSubmitted(true);
         setShowGuestForm(false);
         setGuestFormErrors({});
         
-        // Save to localStorage
         try {
           localStorage.setItem(STORAGE_USER_KEY, JSON.stringify({
             firstName,
@@ -700,11 +687,28 @@ const ChatBotIcon = () => {
           console.warn("Failed to save guest info to localStorage:", error);
         }
         
-        // Initialize chat session now that guest info is available
-        console.log('Guest form submitted successfully, initializing chat session...');
-        await initializeChatSession();
+        // Create session immediately after guest form submission
+        console.log('Guest form submitted, creating session...');
+        if (socket && socket.connected && !session) {
+          await createSession();
+        }
         
-        logWithIcon.success('Guest user created and chat initialized');
+        // Send any pending user messages to the server
+        const lastUserMessage = messages[messages.length - 1];
+        if (lastUserMessage && lastUserMessage.from === 'user') {
+          console.log('Sending guest user message to server after form submission...');
+          if (socket && socket.connected) {
+            setTimeout(() => {
+              socket.emit("message:send", {
+                sessionId: session?._id || session?.id,
+                message: lastUserMessage.text,
+                messageType: "text",
+              });
+            }, 1000); // Small delay to ensure session is created
+          }
+        }
+        
+        logWithIcon.success('Guest user created and session initialized');
       }
     } catch (error) {
       console.error("Error saving guest user:", error);
@@ -716,7 +720,13 @@ const ChatBotIcon = () => {
     }
   };
 
-  const inputEnabled = true;
+  // FIXED: Trigger guest form when it should show
+  useEffect(() => {
+    if (!userFromAuth && !guestFormSubmitted && hasUserSentMessage && !showGuestForm) {
+      console.log('Triggering guest form - conditions met');
+      setShowGuestForm(true);
+    }
+  }, [userFromAuth, guestFormSubmitted, hasUserSentMessage, showGuestForm]);
 
   return (
     <div className="chatbot-wrapper">
@@ -732,13 +742,12 @@ const ChatBotIcon = () => {
 
       {isOpen && (
         <div className="chatbot-box">
-          {/* FIX 1: Make entire header clickable to close chat */}
           <div className="chatbot-header" onClick={handleHeaderClick} style={{ cursor: 'pointer' }}>
             <div className="chat-header-left">
               <button
                 className="chat-close-btn"
                 onClick={(e) => {
-                  e.stopPropagation(); // Prevent double trigger
+                  e.stopPropagation();
                   setIsOpen(false);
                 }}
               >
@@ -783,15 +792,15 @@ const ChatBotIcon = () => {
               placeholder="Type a message..."
               onKeyDown={(e) => {
                 if (e.key === 'Enter') {
-                  sendMessage(); // This will trigger guest form if needed
+                  sendMessage();
                 }
               }}
-              disabled={false} // Always enabled
+              disabled={false} // Always enabled to allow first message
             />
             <button
               onClick={sendMessage}
-              className={`send-btn ${!inputEnabled ? "disabled" : ""}`}
-              disabled={!inputEnabled}
+              className="send-btn"
+              disabled={false} // Always enabled to allow first message
             >
               →
             </button>
@@ -799,100 +808,166 @@ const ChatBotIcon = () => {
         </div>
       )}
 
-      {/* FIXED: Guest Form Modal - Now properly triggered */}
-      <Modal
-        isOpen={showGuestForm}
-        onRequestClose={() => !isSubmittingGuest && setShowGuestForm(false)}
-        className="modal"
-        overlayClassName="modal-overlay"
-        shouldCloseOnOverlayClick={!isSubmittingGuest}
-      >
-        <div className="guest-form">
-          <h2>Please provide your details to start chatting</h2>
-          
-          {guestFormErrors.submit && (
-            <div className="error-message" style={{ color: 'red', marginBottom: '1rem' }}>
-              {guestFormErrors.submit}
+      {/* FIXED: Guest Form - Use conditional rendering instead of Modal */}
+      {showGuestForm && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 10000
+        }}>
+          <div style={{
+            backgroundColor: 'white',
+            padding: '2rem',
+            borderRadius: '8px',
+            maxWidth: '400px',
+            width: '90%',
+            maxHeight: '80vh',
+            overflow: 'auto'
+          }}>
+            <div className="guest-form">
+              <h2 style={{ marginTop: 0, marginBottom: '1rem' }}>Please provide your details to continue chatting</h2>
+              <p style={{ marginBottom: '1.5rem', color: '#666' }}>
+                We'd like to know who we're talking to so we can provide better assistance.
+              </p>
+              
+              {guestFormErrors.submit && (
+                <div className="error-message" style={{ color: 'red', marginBottom: '1rem', padding: '0.5rem', backgroundColor: '#fee', borderRadius: '4px' }}>
+                  {guestFormErrors.submit}
+                </div>
+              )}
+              
+              <div style={{ marginBottom: '1rem' }}>
+                <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>First Name *</label>
+                <input
+                  type="text"
+                  name="firstName"
+                  value={guestInfo.firstName}
+                  onChange={handleGuestFormChange}
+                  disabled={isSubmittingGuest}
+                  required
+                  style={{
+                    width: '100%',
+                    padding: '0.5rem',
+                    border: '1px solid #ccc',
+                    borderRadius: '4px',
+                    fontSize: '1rem'
+                  }}
+                />
+                {guestFormErrors.firstName && (
+                  <span style={{ color: 'red', fontSize: '0.8rem', display: 'block', marginTop: '0.25rem' }}>
+                    {guestFormErrors.firstName}
+                  </span>
+                )}
+              </div>
+              
+              <div style={{ marginBottom: '1rem' }}>
+                <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>Last Name</label>
+                <input
+                  type="text"
+                  name="lastName"
+                  value={guestInfo.lastName}
+                  onChange={handleGuestFormChange}
+                  disabled={isSubmittingGuest}
+                  style={{
+                    width: '100%',
+                    padding: '0.5rem',
+                    border: '1px solid #ccc',
+                    borderRadius: '4px',
+                    fontSize: '1rem'
+                  }}
+                />
+              </div>
+              
+              <div style={{ marginBottom: '1rem' }}>
+                <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>Email *</label>
+                <input
+                  type="email"
+                  name="email"
+                  value={guestInfo.email}
+                  onChange={handleGuestFormChange}
+                  disabled={isSubmittingGuest}
+                  required
+                  style={{
+                    width: '100%',
+                    padding: '0.5rem',
+                    border: '1px solid #ccc',
+                    borderRadius: '4px',
+                    fontSize: '1rem'
+                  }}
+                />
+                {guestFormErrors.email && (
+                  <span style={{ color: 'red', fontSize: '0.8rem', display: 'block', marginTop: '0.25rem' }}>
+                    {guestFormErrors.email}
+                  </span>
+                )}
+              </div>
+              
+              <div style={{ marginBottom: '1.5rem' }}>
+                <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>Phone</label>
+                <input
+                  type="tel"
+                  name="phone"
+                  value={guestInfo.phone}
+                  onChange={handleGuestFormChange}
+                  disabled={isSubmittingGuest}
+                  style={{
+                    width: '100%',
+                    padding: '0.5rem',
+                    border: '1px solid #ccc',
+                    borderRadius: '4px',
+                    fontSize: '1rem'
+                  }}
+                />
+                {guestFormErrors.phone && (
+                  <span style={{ color: 'red', fontSize: '0.8rem', display: 'block', marginTop: '0.25rem' }}>
+                    {guestFormErrors.phone}
+                  </span>
+                )}
+              </div>
+              
+              <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+                <button 
+                  onClick={() => setShowGuestForm(false)}
+                  disabled={isSubmittingGuest}
+                  style={{
+                    padding: '10px 20px',
+                    backgroundColor: '#6c757d',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: isSubmittingGuest ? 'not-allowed' : 'pointer',
+                    fontSize: '1rem'
+                  }}
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={submitGuestForm}
+                  disabled={isSubmittingGuest}
+                  style={{
+                    padding: '10px 20px',
+                    backgroundColor: '#007bff',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: isSubmittingGuest ? 'not-allowed' : 'pointer',
+                    fontSize: '1rem'
+                  }}
+                >
+                  {isSubmittingGuest ? 'Submitting...' : 'Continue Chat'}
+                </button>
+              </div>
             </div>
-          )}
-          
-          <div className="form-group">
-            <label>First Name *</label>
-            <input
-              type="text"
-              name="firstName"
-              value={guestInfo.firstName}
-              onChange={handleGuestFormChange}
-              disabled={isSubmittingGuest}
-              required
-            />
-            {guestFormErrors.firstName && (
-              <span className="field-error" style={{ color: 'red', fontSize: '0.8rem' }}>
-                {guestFormErrors.firstName}
-              </span>
-            )}
-          </div>
-          
-          <div className="form-group">
-            <label>Last Name</label>
-            <input
-              type="text"
-              name="lastName"
-              value={guestInfo.lastName}
-              onChange={handleGuestFormChange}
-              disabled={isSubmittingGuest}
-            />
-          </div>
-          
-          <div className="form-group">
-            <label>Email *</label>
-            <input
-              type="email"
-              name="email"
-              value={guestInfo.email}
-              onChange={handleGuestFormChange}
-              disabled={isSubmittingGuest}
-              required
-            />
-            {guestFormErrors.email && (
-              <span className="field-error" style={{ color: 'red', fontSize: '0.8rem' }}>
-                {guestFormErrors.email}
-              </span>
-            )}
-          </div>
-          
-          <div className="form-group">
-            <label>Phone</label>
-            <input
-              type="tel"
-              name="phone"
-              value={guestInfo.phone}
-              onChange={handleGuestFormChange}
-              disabled={isSubmittingGuest}
-            />
-            {guestFormErrors.phone && (
-              <span className="field-error" style={{ color: 'red', fontSize: '0.8rem' }}>
-                {guestFormErrors.phone}
-              </span>
-            )}
-          </div>
-          
-          <div className="form-actions">
-            <button 
-              onClick={submitGuestForm}
-              disabled={isSubmittingGuest}
-            >
-              {isSubmittingGuest ? 'Submitting...' : 'Submit'}
-            </button>
-            <button 
-              onClick={() => setShowGuestForm(false)}
-              disabled={isSubmittingGuest}
-            >
-              Cancel
-            </button>
           </div>
         </div>
-      </Modal>
+      )}
     </div>
   );
 };

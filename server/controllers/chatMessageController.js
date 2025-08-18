@@ -637,23 +637,31 @@ class ChatMessageController {
         try {
             const businessHours = await BusinessHours.getActive();
             const isBusinessHours = businessHours ? businessHours.isCurrentlyOpen() : false;
-            
+            const isGuest = !session.userId && session.guestUserId;
+
             logWithIcon.info('Generating bot response:', {
                 messageType,
                 userMessage: userMessage.substring(0, 50),
                 isBusinessHours,
-                sessionType: session.sessionType
+                sessionType: session.sessionType,
+                isGuest
             });
-            
-            // Handle different message types
+
+            // Handle guest form completion
+            if (isGuest && messageType === 'guest_form_complete') {
+                return this.handleGuestFormCompletion(session);
+            }
+
+            // Handle option selection
             if (messageType === 'option_selection') {
                 return await this.handleOptionSelection(session, userMessage, isBusinessHours);
             }
-            
+
+            // Handle form data
             if (messageType === 'form_data') {
                 return await this.handleFormData(session, userMessage);
             }
-            
+
             // Try templates first
             try {
                 const templates = await ChatTemplate.find({
@@ -661,21 +669,20 @@ class ChatMessageController {
                     category: 'general',
                     isActive: true
                 }).sort({ priority: -1 }).limit(1);
-                
+
                 if (templates && templates.length > 0) {
                     const tpl = templates[0];
                     await ChatTemplate.findByIdAndUpdate(tpl._id, {
                         $inc: { 'usage.timesUsed': 1 },
                         'usage.lastUsed': new Date()
                     });
-                    
+
                     const rendered = tpl.render ? tpl.render({
                         firstName: session.userInfo.firstName
                     }) : tpl.content;
-                    
-                    // FIXED: Use formatQuickReplies for template processing
+
                     const templateQuickReplies = formatQuickReplies(tpl.quickReplies);
-                    
+
                     return {
                         message: rendered,
                         messageType: 'text',
@@ -687,16 +694,38 @@ class ChatMessageController {
             } catch (err) {
                 logWithIcon.error('Template selection error:', err);
             }
-            
+
             // Generate contextual response as fallback
             return await this.generateContextualResponse(session, userMessage, isBusinessHours);
-            
+
         } catch (error) {
             logWithIcon.error('Error generating bot response:', error);
             return {
                 message: "I'm sorry, I'm having trouble processing your request right now. Please try again or contact support.",
                 messageType: 'text',
                 quickReplies: ['Try again', 'Contact support'],
+                metadata: { errorFallback: true, noEncryption: true }
+            };
+        }
+    }
+
+    static handleGuestFormCompletion(session) {
+        try {
+            return {
+                message: `Thank you for providing your details, ${session.userInfo.firstName}! How can I assist you today?`,
+                messageType: 'text',
+                quickReplies: ['Search Jobs', 'Partnership Info', 'Talk to Agent'],
+                metadata: { 
+                    noEncryption: true,
+                    guestFormComplete: true 
+                }
+            };
+        } catch (error) {
+            logWithIcon.error('Error handling guest form completion:', error);
+            return {
+                message: "Thank you for your information! How can I help you today?",
+                messageType: 'text',
+                quickReplies: ['Search Jobs', 'Get Help', 'Contact Support'],
                 metadata: { errorFallback: true, noEncryption: true }
             };
         }
