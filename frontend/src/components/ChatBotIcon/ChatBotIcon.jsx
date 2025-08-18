@@ -581,18 +581,18 @@ const ChatBotIcon = () => {
       const biz = await fetchBusinessHours();
       setBusinessInfo(biz);
       
-      if (biz && !biz.isOpen && biz.outsideHoursMessage) {
-        setMessages([
-          {
-            id: "outside-hours",
-            from: "bot",
-            text: biz.outsideHoursMessage,
-            timestamp: Date.now(),
-            avatar: FavIconLogo,
-            quickReplies: biz.outsideHoursOptions || [],
-          },
-        ]);
-      } else {
+      // if (biz && !biz.isOpen && biz.outsideHoursMessage) {
+      //   setMessages([
+      //     {
+      //       id: "outside-hours",
+      //       from: "bot",
+      //       text: biz.outsideHoursMessage,
+      //       timestamp: Date.now(),
+      //       avatar: FavIconLogo,
+      //       quickReplies: biz.outsideHoursOptions || [],
+      //     },
+      //   ]);
+      // } else {
         setMessages([
           {
             id: "welcome-fallback",
@@ -611,7 +611,7 @@ const ChatBotIcon = () => {
             ],
           },
         ]);
-      }
+      // }
     }
     
     // Create session only if user has submitted form/is authenticated
