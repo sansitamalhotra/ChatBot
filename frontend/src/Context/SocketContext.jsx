@@ -49,18 +49,7 @@ export const SocketProvider = ({ children }) => {
       return null;
     }
 
-    // FIXED: Use the correctly extracted values
-    if (!isAuthenticated || !token || !user) {
-      logWithIcon.error('Cannot create socket: missing auth data', { 
-        isAuthenticated, 
-        hasToken: !!token, 
-        hasUser: !!user 
-      });
-      return null;
-    }
-
     connectionAttemptRef.current = true;
-    logWithIcon.disconnect('Creating socket connection for: ' + user?.email);
     setConnectionStatus('connecting');
     setError(null);
     
@@ -71,29 +60,58 @@ export const SocketProvider = ({ children }) => {
     const serverUrl = process.env.REACT_APP_API_URL || 'http://localhost:8000';
     logWithIcon.network('Connecting to server: ' + serverUrl)
     
-    const newSocket = io(serverUrl, {
-      auth: { 
-        token: token,
-        userId: user._id || user.userId,
-        userInfo: {
-          firstname: user.firstname,
-          lastname: user.lastname,
-          email: user.email,
-          role: user.role,
-          photo: user.photo
-        }
-      },
-      transports: ['websocket', 'polling'],
-      upgrade: true,
-      reconnection: true,
-      reconnectionAttempts: maxReconnectAttempts,
-      reconnectionDelay: baseReconnectDelay,
-      reconnectionDelayMax: 10000,
-      randomizationFactor: 0.5,
-      timeout: 20000,
-      autoConnect: true,
-      forceNew: true
-    });
+    let socketConfig;
+    
+    // Configure socket based on authentication status
+    if (isAuthenticated && token && user) {
+      logWithIcon.disconnect('Creating authenticated socket connection for: ' + user?.email);
+      socketConfig = {
+        auth: { 
+          token: token,
+          userId: user._id || user.userId,
+          userInfo: {
+            firstname: user.firstname,
+            lastname: user.lastname,
+            email: user.email,
+            role: user.role,
+            photo: user.photo
+          }
+        },
+        transports: ['websocket', 'polling'],
+        upgrade: true,
+        reconnection: true,
+        reconnectionAttempts: maxReconnectAttempts,
+        reconnectionDelay: baseReconnectDelay,
+        reconnectionDelayMax: 10000,
+        randomizationFactor: 0.5,
+        timeout: 20000,
+        autoConnect: true,
+        forceNew: true
+      };
+    } else {
+      logWithIcon.guest('Creating guest socket connection');
+      socketConfig = {
+        auth: { 
+          guest: true,
+          userInfo: {
+            isGuest: true,
+            role: 'guest'
+          }
+        },
+        transports: ['websocket', 'polling'],
+        upgrade: true,
+        reconnection: true,
+        reconnectionAttempts: maxReconnectAttempts,
+        reconnectionDelay: baseReconnectDelay,
+        reconnectionDelayMax: 10000,
+        randomizationFactor: 0.5,
+        timeout: 20000,
+        autoConnect: true,
+        forceNew: true
+      };
+    }
+    
+    const newSocket = io(serverUrl, socketConfig);
 
     // Store socket reference
     socketRef.current = newSocket;
@@ -107,8 +125,8 @@ export const SocketProvider = ({ children }) => {
       setError(null);
       reconnectAttemptsRef.current = 0;
       
-      // Emit initial connection status for admin users
-      if (user && user.role === 1) {
+      // Emit initial connection status for authenticated admin users only
+      if (isAuthenticated && user && user.role === 1) {
         logWithIcon.broadcast('Emitting initial admin connection')
         newSocket.emit('admin:connected', {
           userId: user._id || user.userId,
@@ -123,7 +141,7 @@ export const SocketProvider = ({ children }) => {
           socketId: newSocket.id
         });
         
-        // Also emit user activity as active
+        // Also emit user activity as active for authenticated users
         newSocket.emit('user:activity', {
           userId: user._id || user.userId,
           status: 'active',
@@ -136,6 +154,8 @@ export const SocketProvider = ({ children }) => {
             photo: user.photo
           }
         });
+      } else if (!isAuthenticated) {
+        logWithIcon.guest('Guest socket connected successfully');
       }
     });
 
@@ -238,8 +258,8 @@ export const SocketProvider = ({ children }) => {
   const disconnect = useCallback(() => {
     logWithIcon.disconnect('Manual disconnect requested')
     
-    // Emit offline status before disconnecting
-    if (socketRef.current && isConnected && user) {
+    // Emit offline status before disconnecting for authenticated users only
+    if (socketRef.current && isConnected && isAuthenticated && user) {
       socketRef.current.emit('user:activity', {
         userId: user._id || user.userId,
         status: 'offline',
@@ -250,9 +270,9 @@ export const SocketProvider = ({ children }) => {
     
     cleanupSocket();
     reconnectAttemptsRef.current = 0;
-  }, [cleanupSocket, isConnected, user]);
+  }, [cleanupSocket, isConnected, isAuthenticated, user]);
 
-  // Initialize socket when auth state changes
+  // Initialize socket when auth state changes or for guest connections
   useEffect(() => {
     // FIXED: Wait for auth to be initialized before attempting connection
     if (!isInitialized) {
@@ -269,10 +289,11 @@ export const SocketProvider = ({ children }) => {
       isInitialized
     });
     
+    // Create socket for authenticated users
     if (isAuthenticated && token && user) {
       // Only create socket if we don't have a connected one
       if (!socketRef.current || !isConnected) {
-        logWithIcon.launch('Creating new socket connection');
+        logWithIcon.launch('Creating new authenticated socket connection');
         const newSocket = createSocket();
         if (newSocket) {
           setSocket(newSocket);
@@ -280,7 +301,22 @@ export const SocketProvider = ({ children }) => {
       } else {
         logWithIcon.info('Socket already connected, skipping creation')
       }
-    } else {
+    } 
+    // Create socket for guest users (when auth is initialized but user is not authenticated)
+    else if (!isAuthenticated && isInitialized) {
+      // Only create guest socket if we don't have a connected one
+      if (!socketRef.current || !isConnected) {
+        logWithIcon.launch('Creating new guest socket connection');
+        const newSocket = createSocket();
+        if (newSocket) {
+          setSocket(newSocket);
+        }
+      } else {
+        logWithIcon.info('Guest socket already connected, skipping creation')
+      }
+    } 
+    // Cleanup when auth is invalid
+    else {
       logWithIcon.cleanup('Auth state invalid, cleaning up socket')
       disconnect();
     }
@@ -303,10 +339,10 @@ export const SocketProvider = ({ children }) => {
     };
   }, [cleanupSocket, user]);
 
-  // Handle page beforeunload to emit offline status
+  // Handle page beforeunload to emit offline status for authenticated users
   useEffect(() => {
     const handleBeforeUnload = () => {
-      if (socketRef.current && isConnected && user) {
+      if (socketRef.current && isConnected && isAuthenticated && user) {
         socketRef.current.emit('user:activity', {
           userId: user._id || user.userId,
           status: 'offline',
@@ -318,7 +354,7 @@ export const SocketProvider = ({ children }) => {
 
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-  }, [isConnected, user]);
+  }, [isConnected, isAuthenticated, user]);
 
   const value = {
     socket: socketRef.current,
@@ -329,6 +365,18 @@ export const SocketProvider = ({ children }) => {
     reconnect: () => {
       reconnectAttemptsRef.current = 0;
       handleReconnect();
+    },
+    // Helper method to ensure socket is available for guests
+    ensureSocketConnection: () => {
+      if (!socketRef.current || !isConnected) {
+        logWithIcon.info('Ensuring socket connection for guest/user');
+        const newSocket = createSocket();
+        if (newSocket) {
+          setSocket(newSocket);
+        }
+        return newSocket;
+      }
+      return socketRef.current;
     }
   };
 

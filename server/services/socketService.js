@@ -15,9 +15,12 @@ const agentAssignment = require('./agentAssignmentService');
 const { logWithIcon } = require('./consoleIcons');
 const ChatMessageController = require('../controllers/chatMessageController');
 const SocketChatController = require('../controllers/socketChatController');
+const ChatSessionController = require('../controllers/chatSessionController');
 const businessHoursAdapter = require('./businessHoursAdapter');
 const { join } = require('path');
 const chatTemplateCache = require('./chatTemplateCache');
+const { guestUserEventEmitter } = require('../controllers/guestUserController');
+
 dotenv.config();
 // Valid statuses your system supports
 const VALID_STATUSES = ['offline', 'online', 'active', 'idle', 'away'];
@@ -28,6 +31,117 @@ const VALID_ACTIVITY_TYPES = [
   'page_focus', 'page_blur', 'mouse_activity', 'keyboard_activity',
   'manual_override', 'page_unload', 'component_unmount'
 ];
+
+let globalIO = null;
+const setupGuestUserChatSessionEventListeners = (io) => {
+  globalIO = io;
+  // Listen for guest user creation events
+  guestUserEventEmitter.on('guestUserCreated', async (eventData) => {
+    try {
+      const { guestUser, sessionPreferences } = eventData;
+      logWithIcon.info(`Creating chat session for guest user: ${guestUser.email}`);
+
+      // Create chat session using the direct approach (not via HTTP)
+      const BusinessHours = require('../models/businessHoursModel');
+      const ChatMetrics = require('../models/chatMetricsModel');
+      
+      const businessHours = await BusinessHours.getActive();
+      const isBusinessHours = businessHours ? businessHours.isCurrentlyOpen() : false;
+
+      const session = new ChatSession({
+        guestUserId: guestUser._id,
+        sessionType: sessionPreferences.sessionType || 'bot',
+        userInfo: {
+          firstName: guestUser.firstName,
+          lastName: guestUser.lastName,
+          email: guestUser.email,
+          phone: guestUser.phone || ''
+        },
+        status: 'active',
+        createdDuringBusinessHours: isBusinessHours,
+        metadata: {
+          ...sessionPreferences.metadata,
+          isAuthenticated: false,
+          isGuest: true,
+          trackingId: guestUser._id.toString(),
+          createdAsync: true
+        }
+      });
+
+      await session.save();
+
+      // Create chat metrics
+      const metrics = new ChatMetrics({
+        sessionId: session._id,
+        userId: null,
+        guestUserId: guestUser._id,
+        startTime: new Date(),
+        requestTime: new Date(),
+        sessionMetrics: { startTime: new Date() },
+        messageCount: { total: 0, userMessages: 0, agentMessages: 0, botMessages: 0 },
+        outsideBusinessHours: !isBusinessHours,
+        businessHoursMetrics: {
+          requestedDuringHours: isBusinessHours,
+          servedDuringHours: isBusinessHours
+        }
+      });
+
+      await metrics.save();
+
+      // Create welcome message for bot sessions
+      let welcomeMessage = null;
+      if (!sessionPreferences.sessionType || sessionPreferences.sessionType === 'bot') {
+        try {
+          welcomeMessage = await createWelcomeMessage(session, guestUser, false);
+        } catch (welcomeError) {
+          logWithIcon.error('Failed to create welcome message:', welcomeError);
+        }
+      }
+
+      const data = {
+        success: true,
+        sessionId: session._id,
+        session: session.toObject(),
+        metrics: metrics.toObject(),
+        welcomeMessage,
+        businessHours: {
+          isOpen: isBusinessHours,
+          info: businessHours ? businessHours.toObject() : null
+        }
+      }
+
+      
+      // Emit success event for the specific guest user
+      io.emit(`guestUserSessionCreated:${guestUser._id}`, {
+        success: true,
+        sessionId: session._id,
+        session: session.toObject(),
+        metrics: metrics.toObject(),
+        welcomeMessage,
+        businessHours: {
+          isOpen: isBusinessHours,
+          info: businessHours ? businessHours.toObject() : null
+        }
+      });
+
+      logWithIcon.success(`Guest user session created for ${guestUser.email}`);
+
+    } catch(error) {
+      logWithIcon.error(`Error creating guest user session:`, error);
+
+      // Emit failure event
+      if (eventData && eventData.guestUser) {
+        io.emit(`guestUserSessionFailed:${eventData.guestUser._id}`, {
+          success: false,
+          guestUserId: eventData.guestUser._id,
+          error: error.message,
+          message: 'Failed to create chat session for guest user'
+        });
+      }
+    }
+  });
+  logWithIcon.success('Guest user session event listeners set up successfully');
+}
 
 const generateUniqueMessageId = () => {
   const timestamp = Date.now();
@@ -1161,7 +1275,7 @@ const createWelcomeMessage = async (session, userInfo, isAuthenticated) => {
 const handleMessageSend = async (socket, io, payload, ack) => {
   try {
     const { sessionId, message, messageType = 'text', metadata = {} } = payload;
-    const userId = socket.user?._id?.toString();
+    const userId = socket.user?._id?.toString() || socket.user.guestId;
     
     // Validate and format quickReplies if present in metadata
     if (metadata.quickReplies) {
@@ -1214,6 +1328,8 @@ const validateChatMessageData = (messageData) => {
    };
 
 const setupSocketHandlersFixed = (io) => {
+  setupGuestUserChatSessionEventListeners(io);
+
   io.on('connection', async (socket) => {
     // Attach Business Hours details to Socket
     try {
@@ -1269,7 +1385,7 @@ const setupSocketHandlersFixed = (io) => {
 
     socket.on('disconnect', async (reason) => {
       await handleDisconnect(socket, io, reason);
-    });
+    });    
   });
 };
 
@@ -1443,6 +1559,9 @@ const broadcastNewMessageToSession = (io, sessionId, message) => {
 };
 
 const setupSocketHandlers = (io) => {
+  // Set up guest user session event listeners (call once when IO is initialized)
+  setupGuestUserChatSessionEventListeners(io);
+
   io.on('connection', async (socket) => {
     // FIXED: Attach Business Hours details to Socket
     try {
@@ -1532,6 +1651,8 @@ const setupSocketHandlers = (io) => {
 
         // Create message
         const ChatMessage = require('../models/chatMessageModel');
+
+        console.log('Creating chat message...');
         const chatMessage = new ChatMessage({
           sessionId,
           senderId: userId || session.guestUserId,
@@ -1545,7 +1666,14 @@ const setupSocketHandlers = (io) => {
           }
         });
 
-        await chatMessage.save();
+        console.log('Chat message created:', chatMessage._id);
+        try {
+          const newChatMessage = await chatMessage.save();
+        } catch (error) {
+          console.error('Error saving chat message:', error);
+        }
+
+        console.log('Chat message saved');
 
         // Update session
         session.lastMessageAt = new Date();
@@ -1715,6 +1843,8 @@ const setupSocketHandlers = (io) => {
   });
 };
 module.exports = {
+  setupGuestUserChatSessionEventListeners,
+
   handleConnection,
   debugActivitySessionModel,
   createActivitySessionSafely,

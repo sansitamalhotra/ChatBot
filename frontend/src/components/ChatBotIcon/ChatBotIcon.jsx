@@ -1,3 +1,4 @@
+//frontend/src/components/ChatBotIcon/ChatBotIcon.jsx
 import React, { useEffect, useRef, useState, useMemo, useCallback } from "react";
 import { Link } from "react-router-dom";
 import API from "../../helpers/API";
@@ -54,7 +55,7 @@ async function fetchBusinessHours() {
 }
 
 const ChatBotIcon = () => {
-  const { socket, isConnected } = useSocket();
+  const { socket, isConnected, ensureSocketConnection } = useSocket();
   const [auth] = useAuth();
   const userFromAuth = auth?.user;
 
@@ -434,7 +435,8 @@ const ChatBotIcon = () => {
         metadata: {
           guestFirstName: firstName,
           guestLastName: lastName,
-          guestPhone: phone
+          guestPhone: phone,
+          isGuest: true
         }
       };
     }
@@ -559,10 +561,27 @@ const ChatBotIcon = () => {
           console.warn("Failed to save guest info to localStorage:", error);
         }
         
-        // Create session and send pending message
+        // Create session immediately after successful guest user creation
         console.log('Guest form submitted, creating session...');
-        if (socket && socket.connected && !session) {
+        
+        // Ensure socket connection is available for guest users
+        let activeSocket = socket;
+        if (!activeSocket || !activeSocket.connected) {
+          console.log('No active socket for guest, ensuring connection...');
+          activeSocket = ensureSocketConnection();
+          // Give socket a moment to connect
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+        
+        if (activeSocket && activeSocket.connected && !session) {
+          console.log('Socket is connected, creating session...');
           await createSession();
+        } else {
+          console.log('Socket connection status:', {
+            hasSocket: !!activeSocket,
+            isConnected: activeSocket?.connected,
+            hasSession: !!session
+          });
         }
         
         // Send the last user message after form submission
@@ -626,12 +645,11 @@ const ChatBotIcon = () => {
     setMessages(prev => [...prev, userMessage]);
     setHasUserSentMessage(true);
     
-    // FIXED: For guests, show form immediately after first message (unless they canceled it)
-    if (!userFromAuth && !guestFormSubmitted && !guestFormCanceled) {
+    // FIXED: For guests, show form immediately after first message
+    if (!userFromAuth && !guestFormSubmitted) {
       console.log('Guest user sent first message, triggering form...', {
         userFromAuth: !!userFromAuth,
         guestFormSubmitted,
-        guestFormCanceled,
         hasUserSentMessage: true
       });
       // Use immediate state update instead of setTimeout for more reliable triggering
@@ -647,7 +665,7 @@ const ChatBotIcon = () => {
         messageType: "text",
       });
     }
-  }, [input, session, socket, userFromAuth, guestFormSubmitted, guestFormCanceled]);
+  }, [input, session, socket, userFromAuth, guestFormSubmitted]);
     
   const handleQuickReply = useCallback(
     (option) => {
@@ -669,12 +687,11 @@ const ChatBotIcon = () => {
       setMessages(prev => [...prev, userMessage]);
       setHasUserSentMessage(true);
       
-      // FIXED: For guests, show form immediately after quick reply (unless they canceled it)
-      if (!userFromAuth && !guestFormSubmitted && !guestFormCanceled) {
+      // FIXED: For guests, show form immediately after quick reply
+      if (!userFromAuth && !guestFormSubmitted) {
         console.log('Guest user selected option, triggering form...', {
           userFromAuth: !!userFromAuth,
           guestFormSubmitted,
-          guestFormCanceled,
           hasUserSentMessage: true
         });
         // Use immediate state update instead of setTimeout
@@ -691,7 +708,7 @@ const ChatBotIcon = () => {
         });
       }
     },
-    [session, socket, userFromAuth, guestFormSubmitted, guestFormCanceled]
+    [session, socket, userFromAuth, guestFormSubmitted]
   );
 
   const renderMessage = (m, index) => {
@@ -780,7 +797,7 @@ const ChatBotIcon = () => {
             ],
           },
         ]);
-      //}
+      // }
     }
     
     // FIXED: Create session for authenticated users immediately, for guests only after form submission
@@ -823,11 +840,11 @@ const ChatBotIcon = () => {
 
   // FIXED: Trigger guest form when it should show
   useEffect(() => {
-    if (!userFromAuth && !guestFormSubmitted && hasUserSentMessage && !showGuestForm && !guestFormCanceled) {
+    if (!userFromAuth && !guestFormSubmitted && hasUserSentMessage && !showGuestForm) {
       console.log('Triggering guest form - conditions met');
       setShowGuestForm(true);
     }
-  }, [userFromAuth, guestFormSubmitted, hasUserSentMessage, showGuestForm, guestFormCanceled]);
+  }, [userFromAuth, guestFormSubmitted, hasUserSentMessage, showGuestForm]);
 
   return (
     <div className="chatbot-wrapper">
@@ -911,24 +928,39 @@ const ChatBotIcon = () => {
 
       {/* FIXED: Guest Form Modal with proper event handling and styling */}
       {showGuestForm && (
-        <div 
-          className={`modal-overlay ${isSubmittingGuest ? 'submitting' : ''}`}
-          onClick={handleModalOverlayClick}
-          style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            backgroundColor: 'rgba(0, 0, 0, 0.5)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 9999,
-            padding: '1rem',
-            backdropFilter: 'blur(4px)'
-          }}
-        >
+  <div
+    className={`modal-overlay ${isSubmittingGuest ? 'submitting' : ''}`}
+    onClick={(e) => {
+      // Only close if the user clicked the overlay itself
+      if (e.target.classList.contains('modal-overlay')) {
+        cancelGuestForm(); // your function to hide the popup
+      }
+    }}
+    style={{
+      position: 'fixed',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      backgroundColor: 'rgba(0, 0, 0, 0.5)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      zIndex: 9999,
+      padding: '1rem',
+      backdropFilter: 'blur(4px)'
+    }}
+  >
+    {/* <div
+      className="popup-content"
+      onClick={(e) => e.stopPropagation()} // prevent overlay click when clicking inside form
+      style={{
+        backgroundColor: 'white',
+        borderRadius: '12px',
+        padding: '2rem',
+        minWidth: '300px'
+      }}
+    ></div> */}
           <div 
             className="modal-container" 
             onClick={(e) => e.stopPropagation()}
@@ -1168,7 +1200,6 @@ const ChatBotIcon = () => {
                   Email Address <span className="required" style={{ color: '#dc2626' }}>*</span>
                 </label>
                 <input
-                  id="guest-email"
                   type="email"
                   name="email"
                   value={guestInfo.email}
@@ -1232,7 +1263,6 @@ const ChatBotIcon = () => {
                   Phone Number
                 </label>
                 <input
-                  id="guest-phone"
                   type="tel"
                   name="phone"
                   value={guestInfo.phone}

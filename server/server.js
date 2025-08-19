@@ -107,8 +107,24 @@ const io = new Server(server, {
 io.use(async (socket, next) => {
   try {
     const token = socket.handshake.auth.token;
+    const isGuest = socket.handshake.auth.guest;
+    
+    // Handle guest connections
+    if (isGuest && !token) {
+      logWithIcon.guest(`Guest socket connection allowed`);
+      socket.isGuest = true;
+      socket.user = {
+        isGuest: true,
+        guestId: `guest_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        role: 'guest',
+        connectionTime: new Date()
+      };
+      return next();
+    }
+    
+    // Handle authenticated user connections
     if (!token) {
-      logWithIcon.error(`Socket auth failed: Missing token`);
+      logWithIcon.error(`Socket auth failed: Missing token for non-guest connection`);
       return next(new Error('Authentication Failed: Missing Token!'));
     }
 
@@ -126,7 +142,8 @@ io.use(async (socket, next) => {
       return next(new Error('Authentication Failed: User Not Found!'));
     }
 
-    // FIXED: Set correct user properties for socket
+    // Set authenticated user properties for socket
+    socket.isGuest = false;
     socket.user = {
       _id: user._id,
       userId: user._id, // Add both for compatibility
@@ -134,7 +151,8 @@ io.use(async (socket, next) => {
       firstname: user.firstname,
       lastname: user.lastname,
       email: user.email,
-      photo: user.photo
+      photo: user.photo,
+      isGuest: false
     };
     
     logWithIcon.success(`Socket authenticated for user: ${user.email} (Role: ${user.role})`);

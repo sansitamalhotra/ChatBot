@@ -17,7 +17,7 @@ const chatMessageSchema = new Schema({
   senderModel: {
     type: String,
     required: true,
-    enum: ['User', 'LiveAgent', 'System']
+    enum: ['User', 'LiveAgent', 'System', 'GuestUser']
   },
   senderType: {
     type: String,
