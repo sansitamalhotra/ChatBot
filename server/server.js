@@ -74,7 +74,7 @@ if (process.env.ALLOW_ORIGINS) {
 // CORS Configuration
 app.use(cors({
   credentials: true,
-  origin: ['http://localhost:3000', 'http://localhost:8000'],
+  origin: allowedOrigins,
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
 }));
 
@@ -97,8 +97,8 @@ app.use((req, res, next) => {
 // Socket.IO Configuration for Employee Utility Time Optimization Phase 2
 const io = new Server(server, {
   cors: {
-    origin: ['http://localhost:3000',  'http://localhost:8000'],
-    methods: ['GET', 'POST'],
+    origin: allowedOrigins,
+    methods: ['GET', 'POST', 'PUT'],
     credentials: true,
   }
 });
@@ -168,12 +168,18 @@ io.on('connection', (socket) => {
   socket.on('ping', (timestamp) => {
     socket.emit('pong', timestamp);
   });
+
+  // Handle connection errors
+  socket.on('error', (error) => {
+    console.error(`Socket error for user ${userId}:`, error);
+  });
 });
 
 setupSocketHandlers(io);
 
 // Environment configuration
 const environment = process.env.NODE_ENV;
+//const environment = process.env.NODE_ENV_PROD;
 
 // API Routes section
 const staticPaths = {
@@ -218,6 +224,18 @@ Object.entries(staticPaths).forEach(([key, dirPath]) => {
     logWithIcon.broadcast(`Serving ${key} at ${urlPath} from ${dirPath}`);
   }
 });
+// Health check endpoint
+app.get("/health", (req, res) => {
+  res.status(200).json({
+    status: 'healthy',
+    timestamp: new Date().toISOString(),
+    environment,
+    port: PORT
+  });
+});
+
+
+
 // Health check endpoint
 app.get("/health", (req, res) => {
   res.status(200).json({
