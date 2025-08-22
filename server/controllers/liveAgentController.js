@@ -74,13 +74,14 @@ class LiveAgentController {
 static async getLoggedInAdminAgent(req, res) {
   try {
     const adminAgent = await LiveAgent.findOne({
-      status: { $in: ['online', 'away'] }
+      status: { $in: ['online', 'active'] } // Changed from 'away' to 'active'
     })
     .populate('userId', 'firstname lastname email role')
     .sort({ lastActive: -1 })
     .limit(1);
 
-    if (!adminAgent || !adminAgent.userId || adminAgent.userId.role !== '1') {
+    // Fix: Check if role is 1 (number) instead of '1' (string)
+    if (!adminAgent || !adminAgent.userId || adminAgent.userId.role !== 1) {
       return res.status(404).json({
         success: false,
         message: 'No admin agent currently available'
@@ -93,7 +94,9 @@ static async getLoggedInAdminAgent(req, res) {
       email: adminAgent.userId.email,
       status: adminAgent.status,
       department: adminAgent.department,
-      lastActive: adminAgent.lastActive
+      lastActive: adminAgent.lastActive,
+      currentChats: adminAgent.currentChats,
+      maxChats: adminAgent.maxChats
     };
 
     res.json({

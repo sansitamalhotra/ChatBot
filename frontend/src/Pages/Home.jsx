@@ -1,5 +1,5 @@
 import React from 'react';
-import { Helmet } from "react-helmet";
+import { Helmet } from "react-helmet-async";
 import TestHomeHeader from './TestHomeHeader';
 import HeroCarousel from './TestHomeHero';
 import RecruitmentExperienceSection from './RecruitmentExperienceSection';

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useParams, useNavigate } from "react-router-dom";
-import { Helmet } from "react-helmet";
+import { Helmet } from "react-helmet-async";
 import API from '../../helpers/API';
 import {
   EditOutlined,
@@ -164,7 +164,7 @@ const TestDashboardHome = ({ userId }) => {
       window.history.pushState(
         null,
         null,
-        `/Admin/Test-Manage-Jobs?page=${currentPage}`
+        `/Admin/Manage-Jobs?page=${currentPage}`
       );
     }
   }, [currentPage, jobsPerPage]);
@@ -507,10 +507,10 @@ const TestDashboardHome = ({ userId }) => {
                 <div className="collapse" id="admin-jobs">
                   <ul className="nav flex-column sub-menu">
                     <li className="nav-item">
-                      <Link className="nav-link" to="/Admin/Test-Add-Job">Add New Job</Link>
+                      <Link className="nav-link" to="/Admin/Add-Job">Add New Job</Link>
                     </li>
                     <li className="nav-item">
-                      <Link className="nav-link" to="/Admin/Test-Manage-Jobs">Manage Jobs</Link>
+                      <Link className="nav-link" to="/Admin/Manage-Jobs">Manage Jobs</Link>
                     </li>
                   </ul>
                 </div>

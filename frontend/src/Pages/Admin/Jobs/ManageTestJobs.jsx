@@ -198,11 +198,13 @@ const ManageTestJobs = ({ userId }) => {
   useEffect(() => {
     fetchAlJobs();
     window.scrollTo({ top: 0 });
+    
+    // FIXED: Changed API endpoint to frontend route
     if (window.history.pushState) {
       window.history.pushState(
         null,
         null,
-        `/api/v1/Admin/Test-Manage-Jobs?page=${currentPage}`
+        `/Admin/Manage-Jobs?page=${currentPage}`
       );
     }
   }, [currentPage, jobsPerPage]);

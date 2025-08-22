@@ -69,6 +69,7 @@ export const SocketProvider = ({ children }) => {
         auth: { 
           token: token,
           userId: user._id || user.userId,
+          guest: false, // IMPORTANT: Explicitly set guest to false
           userInfo: {
             firstname: user.firstname,
             lastname: user.lastname,
@@ -92,7 +93,8 @@ export const SocketProvider = ({ children }) => {
       logWithIcon.guest('Creating guest socket connection');
       socketConfig = {
         auth: { 
-          guest: true,
+          guest: true, // IMPORTANT: This tells the server this is a guest connection
+          token: null, // IMPORTANT: Explicitly set token to null for guests
           userInfo: {
             isGuest: true,
             role: 'guest'

@@ -114,10 +114,21 @@ const userSchema = new mongoose.Schema({
     type: Date,
     default: Date.now,
   },
+  // currentStatus: {
+  //   type: String,
+  //   enum: ['offline', 'online', 'active', 'idle', 'away'],
+  //   default: 'offline'
+  // },
   currentStatus: {
     type: String,
-    enum: ["offline", "active", "idle", "away", "online"],
-    default: "offline",
+    enum: ['offline', 'online', 'active', 'idle', 'away'],
+    default: 'offline',
+    validate: {
+      validator: function(v) {
+        return ['offline', 'online', 'active', 'idle', 'away'].includes(v);
+      },
+      message: 'Status must be one of: offline, online, active, idle, away'
+    }
   },
   totalWorkTime: {
     type: Number, // Total work time in milliseconds

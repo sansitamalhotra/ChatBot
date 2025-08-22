@@ -1,3 +1,4 @@
+//server/models/chatModel.js
 const mongoose = require('mongoose');
 
 const chatUserDetails = new mongoose.Schema({

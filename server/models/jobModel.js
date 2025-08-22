@@ -1,4 +1,5 @@
-const mongoose = require("mongoose");
+//server/models/jobModel.js
+const mongoose = require('mongoose');
 const { ObjectId } = mongoose.Schema;
 
 const jobSchema = new mongoose.Schema(
@@ -65,4 +66,4 @@ const jobSchema = new mongoose.Schema(
   }
 );
 
-module.exports = mongoose.model("Job", jobSchema);
+module.exports = mongoose.model('Job', jobSchema);

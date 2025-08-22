@@ -1,5 +1,4 @@
 //server/services/liveAgentEmailService.js
-
 const nodemailer = require('nodemailer');
 
 const sendLiveAgentNotification = async (message, chatLink) => {
@@ -7,8 +6,8 @@ const sendLiveAgentNotification = async (message, chatLink) => {
         // Create the transporter
         const transporter = nodemailer.createTransport({
             service: "gmail",
-            host: process.env.SMPT_HOST,
-            port: 465,
+            host: process.env.SEND_EMAIL_HOST,
+            port: 587,
             auth: {
                 user: process.env.EMAIL_NOTIFICATION_USER,
                 pass: process.env.EMAIL_NOTIFICATION_PASS 

@@ -58,7 +58,187 @@ const handleControllerError = (error, res, operation) => {
  */
 
 module.exports = {
-  postJob: async (req, res) => {
+
+    postJob: async (req, res) => {        
+        try {
+            // Validate user ID exists
+            if (!req.user || !req.user._id) {
+                return res.status(401).json({ 
+                    success: false,
+                    error: "User authentication required" 
+                });
+            }
+            const userId = req.user._id;            
+            // Find user and check if exists
+            const user = await User.findById(userId);
+            if (!user) {
+                return res.status(404).json({ 
+                    success: false,
+                    error: "User not found" 
+                });
+            }
+
+            // Initialize jobsPostedBy array if it doesn't exist
+            if (!user.jobsPostedBy) {
+                user.jobsPostedBy = [];
+            }
+
+            const { title, description, qualification, workExperience, workMode, country, province, sector, deadlineDate } = req.body;
+
+            // Validate required fields
+            if (!title || !description || !qualification || !workExperience || !workMode || !country || !province || !sector || !deadlineDate) {
+                return res.status(400).json({
+                    success: false,
+                    error: "Missing required fields"
+                });
+            }
+
+            const jobPostedById = user._id; // Use user ID instead of entire user object
+            const jobPostDate = Date.now();
+            const slug = slugify(title, { lower: true, strict: true });
+            const filePath = req.file ? req.file.path : null;
+
+            const newJobData = { 
+                title, 
+                slug, 
+                description, 
+                qualification, 
+                workExperience, 
+                workMode, 
+                filePath, 
+                country, 
+                province, 
+                sector, 
+                jobPostDate, 
+                jobPostedById, 
+                deadlineDate 
+            };
+
+            console.log({ "New Post Job": newJobData });
+            console.log({ "Job Slug": newJobData.slug });
+            console.log({ "Job Poster": user.firstname + " " + user.lastname });
+
+            // Create and save the new job
+            const newJob = new Job(newJobData);
+            await newJob.save();
+
+            // Add job ID to user's jobsPostedBy array
+            user.jobsPostedBy.push(newJob._id);
+            
+            // Update user's updatedAt field
+            user.updatedAt = new Date();
+            await user.save();
+
+            // Send email notification (non-blocking)
+            try {
+                await sendJobNotificationEmail(newJob);
+            } catch (emailError) {
+                console.error("Email notification failed:", emailError.message);
+                // Consider adding error monitoring here
+            }
+
+            res.status(201).json({
+                success: true,
+                message: `New Job: ${newJob.title}, is Successfully Added!`,
+                data: {
+                    jobId: newJob._id,
+                    title: newJob.title,
+                    slug: newJob.slug
+                }
+            });
+
+        } catch (error) {
+            // Handle specific MongoDB errors
+            if (error.code === 11000) {
+                return res.status(400).json({ 
+                    success: false,
+                    error: "Job with this title already exists. Please use a different title." 
+                });
+            }
+
+            console.error("Error in postJob:", error);
+            res.status(500).json({ 
+                success: false,
+                error: "An Error Occurred While Creating New Job",
+                details: process.env.NODE_ENV === 'development' ? error.message : undefined
+            });
+        }
+    },
+
+    addNewJob:  async (req, res) => {      
+        const userId = req.user._id;
+        const user = await User.findById(userId);
+
+        try {
+            const { 
+                title,
+                description,
+                qualification,
+                workExperience,
+                workMode,
+                country, 
+                province,
+                sector,                 
+                deadlineDate 
+            } = req.body;
+
+            console.log("Job Title", title);
+
+            if (!title) {
+                return res.status(400).json({ error: "Job title is required Here." });
+            }
+            const jobPostedById = user;
+            const jobPostDate = Date.now();
+            
+            const slug = slugify(title, { lower: true });
+            console.log("Job Slug URL", slug);
+            //const slug = sluggo(title); req.file ? req.file.path : null;
+            const filePath = req.file ? req.file.path : null;
+            
+
+            const newJobData = { 
+                title, 
+                description,
+                slug, 
+                qualification,
+                workExperience,
+                workMode,
+                filePath, 
+                //file_mimetype: mimetype, 
+                country, 
+                province,
+                sector,
+                jobPostDate,
+                deadlineDate,
+                jobPostedById
+            };
+            
+            console.log({ "New Post Job": newJobData });
+            console.log({ "Job Slug": slug });
+            console.log({ "Job Poster": user});
+
+            const newJob = new Job(newJobData);
+
+            await newJob.save();
+            user.jobsPostedBy.push(newJob._id);
+            await user.save();     
+    
+            try {
+                 await sendJobNotificationEmail(newJob);
+            } catch (emailError) {
+                console.error("Email notification failed:", emailError.message);
+                // Consider adding error monitoring here
+            }
+
+            res.status(201).json(`New Job: ${newJob.title}, is Successfully Added !!! `);
+        } 
+        catch (error) {
+            console.error(error);
+            res.status(500).json({ error: "An Error Occurred While Creating New Job" });
+        }
+    },
+
+    fetchAllJobs: async (req, res) => {
     try {
       const userId = req.user.id;
       console.log("User lol ID:", userId);

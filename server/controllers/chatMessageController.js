@@ -774,7 +774,7 @@ class ChatMessageController {
             if (selectedOption === "live_agent") {
                 logWithIcon.info(`Sending email for live agent request for session: ${session._id}`);
                 const emailMessage = "A user has requested to speak with a live agent.";
-                const chatLink = `${process.env.FRONTEND_BASE_URL}/admin/chat/${session._id}`;
+                const chatLink = `${process.env.FRONTEND_BASE_URL}/Admin/chat/${session._id}`;
 
                 // Send live agent notification email
                 await sendLiveAgentNotification(emailMessage, chatLink);

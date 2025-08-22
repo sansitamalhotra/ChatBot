@@ -46,7 +46,11 @@ const chatMessageSchema = new Schema({
       'quick_reply',
       'transfer_notice',
       'session_start',
-      'session_end'
+      'session_end',
+      'live_agent_request', // Add this
+      'system_response',    // Add this
+      'system_waiting',     // Add this
+      'system_error',        // Add this   
     ],
     default: 'text',
     required: true
@@ -87,23 +91,23 @@ const chatMessageSchema = new Schema({
       default: false
     },
     quickReplies: {
-    type: Schema.Types.Mixed, // Allow both array of strings and array of objects
-    default: [],
-    validate: {
-      validator: function(value) {
-        if (!value) return true;
-        if (!Array.isArray(value)) return false;
-        
-        // Validate each item is either string or object with text/value
-        return value.every(item => {
-          if (typeof item === 'string') return true;
-          if (item && typeof item === 'object' && (item.text || item.value)) return true;
-          return false;
-        });
-      },
-      message: 'quickReplies must be an array of strings or objects with text/value properties'
-    }
-  },
+      type: Schema.Types.Mixed, // Allow both array of strings and array of objects
+      default: [],
+      validate: {
+        validator: function(value) {
+          if (!value) return true;
+          if (!Array.isArray(value)) return false;
+          
+          // Validate each item is either string or object with text/value
+          return value.every(item => {
+            if (typeof item === 'string') return true;
+            if (item && typeof item === 'object' && (item.text || item.value)) return true;
+            return false;
+          });
+        },
+        message: 'quickReplies must be an array of strings or objects with text/value properties'
+      }
+    },
     formData: {
       type: Schema.Types.Mixed,
       default: null
