@@ -1,4 +1,4 @@
-//server/models/liveAgent.js
+// server/models/liveAgent.js
 const mongoose = require('mongoose');
 const { Schema } = mongoose;
 
@@ -74,23 +74,23 @@ const liveAgentSchema = new Schema({
     type: Date,
     default: Date.now
   },
+  // added alias field used in other services
+  lastActivity: {
+    type: Date,
+    default: Date.now,
+    index: true
+  },
   skills: [{
     type: String,
     enum: [
-      'job_search', 
-      'partnerships', 
-      'technical_support', 
+      'job_search',
+      'partnerships',
+      'technical_support',
       'application_assistance',
       'general_inquiry',
       'billing',
       'account_management'
-    ],
-    validate: {
-      validator: function(v) {
-        return this.skills.length <= 10;
-      },
-      message: 'Agent cannot have more than 10 skills'
-    }
+    ]
   }],
   availability: {
     timezone: {
@@ -143,205 +143,153 @@ const liveAgentSchema = new Schema({
         message: 'Holiday dates must be in the future'
       }
     }],
-    // Temporary unavailability (sick days, vacation, etc.)
     tempUnavailable: {
       start: Date,
       end: Date,
       reason: String
     }
   },
-  // Performance metrics
   performance: {
-    totalChats: {
-      type: Number,
-      default: 0
-    },
-    averageResponseTime: {
-      type: Number,
-      default: 0 // in seconds
-    },
-    averageRating: {
-      type: Number,
-      default: 0,
-      min: 0,
-      max: 5
-    },
-    totalRatings: {
-      type: Number,
-      default: 0
-    },
-    resolutionRate: {
-      type: Number,
-      default: 0 // percentage
-    }
+    totalChats: { type: Number, default: 0 },
+    averageResponseTime: { type: Number, default: 0 },
+    averageRating: { type: Number, default: 0, min: 0, max: 5 },
+    totalRatings: { type: Number, default: 0 },
+    resolutionRate: { type: Number, default: 0 }
   },
-  // Notification preferences
   notifications: {
-    email: {
-      type: Boolean,
-      default: true
-    },
-    newChatAlert: {
-      type: Boolean,
-      default: true
-    },
-    messageSound: {
-      type: Boolean,
-      default: true
-    },
-    outsideHoursNotification: {
-      type: Boolean,
-      default: false
-    }
+    email: { type: Boolean, default: true },
+    newChatAlert: { type: Boolean, default: true },
+    messageSound: { type: Boolean, default: true },
+    outsideHoursNotification: { type: Boolean, default: false }
   },
-  createdAt: {
-    type: Date,
-    default: Date.now
+  isActive: {
+    type: Boolean,
+    default: true,
+    index: true
   },
-  updatedAt: {
-    type: Date,
-    default: Date.now
-  },
-  // Agent profile settings
-  avatar: {
-    type: String,
-    default: null
-  },
-  bio: {
-    type: String,
-    maxlength: 500
-  },
-  languages: [{
-    type: String,
-    default: ['english']
-  }]
+  createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now },
+  avatar: { type: String, default: null },
+  bio: { type: String, maxlength: 500 },
+  currentSessions: { type: Number, default: 0 },
+  availableDuringBusinessHours: { type: Boolean, default: true },
+  availableOutsideHours: { type: Boolean, default: false },
+  emergencySupport: { type: Boolean, default: false },
+  specializations: [{ type: String }],
+  priority: { type: Number, default: 5 },
+  languages: [{ type: String, default: ['english'] }]
 });
 
-// Indexes for performance
-liveAgentSchema.index({ status: 1, currentChats: 1 });
+// Indexes for performance (avoid duplicate agentId index - unique on path already creates index)
+liveAgentSchema.index({ status: 1, currentSessions: 1 });
 liveAgentSchema.index({ department: 1, status: 1 });
 liveAgentSchema.index({ skills: 1, status: 1 });
-liveAgentSchema.index({ agentId: 1 });
 liveAgentSchema.index({ 'availability.workingDays': 1 });
 
 // Pre-save middleware
 liveAgentSchema.pre('save', function(next) {
   this.updatedAt = new Date();
-  
-  // Auto-generate agentId if not provided
+
   if (this.isNew && !this.agentId) {
     this.agentId = 'AGENT_' + Math.random().toString(36).substr(2, 6).toUpperCase();
   }
-  
-  // Update lastActive when status changes to online
+
   if (this.isModified('status') && this.status === 'online') {
     this.lastActive = new Date();
+    this.lastActivity = new Date();
   }
-  
+
+  // Keep lastActivity in sync if manually updated
+  if (this.isModified('lastActivity') && !this.lastActive) {
+    this.lastActive = this.lastActivity;
+  }
+
   next();
 });
 
-// Virtual for current availability
+// Virtuals
 liveAgentSchema.virtual('isAvailable').get(function() {
-  return this.status === 'online' && this.currentChats < this.maxChats;
+  return this.status === 'online' && (this.currentSessions < this.maxChats);
 });
 
-// Virtual for workload percentage
 liveAgentSchema.virtual('workloadPercentage').get(function() {
-  return Math.round((this.currentChats / this.maxChats) * 100);
+  return Math.round((this.currentSessions / this.maxChats) * 100);
 });
 
-// Method to check if agent is working now
+// Methods
 liveAgentSchema.methods.isWorkingNow = function() {
   const moment = require('moment-timezone');
   const now = moment().tz(this.availability.timezone);
   const currentHour = now.format('HH:mm');
   const currentDay = now.format('dddd').toLowerCase();
-  
-  // Check if it's a working day
-  if (!this.availability.workingDays.includes(currentDay)) {
-    return false;
-  }
-  
-  // Check if it's within working hours
+
+  if (!this.availability.workingDays.includes(currentDay)) return false;
+
   const startTime = this.availability.workingHours.start;
   const endTime = this.availability.workingHours.end;
-  
+
   return currentHour >= startTime && currentHour <= endTime;
 };
 
-// Method to check if agent is on holiday
 liveAgentSchema.methods.isOnHoliday = function() {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  
-  return this.availability.holidaySchedule.some(holiday => {
+  return (this.availability.holidaySchedule || []).some(holiday => {
     const holidayDate = new Date(holiday);
     holidayDate.setHours(0, 0, 0, 0);
     return holidayDate.getTime() === today.getTime();
   });
 };
 
-// Method to assign chat
 liveAgentSchema.methods.assignChat = function() {
-  if (this.currentChats >= this.maxChats) {
+  if (this.currentSessions >= this.maxChats) {
     throw new Error('Agent has reached maximum chat capacity');
   }
-  this.currentChats += 1;
-  this.performance.totalChats += 1;
+  this.currentSessions += 1;
+  this.performance.totalChats = (this.performance.totalChats || 0) + 1;
+  this.lastActivity = new Date();
   return this.save();
 };
 
-// Method to release chat
 liveAgentSchema.methods.releaseChat = function() {
-  if (this.currentChats > 0) {
-    this.currentChats -= 1;
-  }
+  if (this.currentSessions > 0) this.currentSessions -= 1;
+  this.lastActivity = new Date();
   return this.save();
 };
 
-// Method to update performance metrics
 liveAgentSchema.methods.updatePerformance = function(responseTime, rating = null) {
-  // Update average response time
-  const totalChats = this.performance.totalChats;
-  const currentAvg = this.performance.averageResponseTime;
+  const totalChats = Math.max(1, this.performance.totalChats || 1);
+  const currentAvg = this.performance.averageResponseTime || 0;
   this.performance.averageResponseTime = ((currentAvg * (totalChats - 1)) + responseTime) / totalChats;
-  
-  // Update rating if provided
+
   if (rating !== null) {
-    const totalRatings = this.performance.totalRatings;
-    const currentRating = this.performance.averageRating;
+    const totalRatings = this.performance.totalRatings || 0;
+    const currentRating = this.performance.averageRating || 0;
     this.performance.averageRating = ((currentRating * totalRatings) + rating) / (totalRatings + 1);
-    this.performance.totalRatings += 1;
+    this.performance.totalRatings = totalRatings + 1;
   }
-  
+
   return this.save();
 };
 
-// Static method to find available agents
+// Statics
 liveAgentSchema.statics.findAvailableAgents = function(skills = [], department = null) {
   const query = {
     status: 'online',
-    $expr: { $lt: ['$currentChats', '$maxChats'] }
+    isActive: true,
+    $expr: { $lt: ['$currentSessions', '$maxChats'] }
   };
-  
-  if (skills.length > 0) {
-    query.skills = { $in: skills };
-  }
-  
-  if (department) {
-    query.department = department;
-  }
-  
-  return this.find(query).sort({ currentChats: 1, 'performance.averageRating': -1 });
+
+  if (skills.length > 0) query.skills = { $in: skills };
+  if (department) query.department = department;
+
+  return this.find(query).sort({ currentSessions: 1, priority: -1, lastActivity: -1 });
 };
 
-// Static method to get agent by agentId
 liveAgentSchema.statics.findByAgentId = function(agentId) {
   return this.findOne({ agentId }).populate('userId', 'firstname lastname email');
 };
 
-// Static method to get agents by department
 liveAgentSchema.statics.findByDepartment = function(department) {
   return this.find({ department }).populate('userId', 'firstname lastname email');
 };

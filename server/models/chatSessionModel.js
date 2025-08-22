@@ -1,4 +1,4 @@
-//server/models/chatSession.js
+//server/models/chatSessionModel.js
 const mongoose = require('mongoose');
 const { Schema } = mongoose;
 
@@ -129,6 +129,10 @@ const chatSessionSchema = new Schema({
     type: String,
     default: 'America/New_York'
   },
+  agentRequested: { type: Boolean, default: false },
+  agentRequestedAt: { type: Date },
+  uniqueAgentUrl: { type: String },
+  assignedAt: { type: Date },
   // FIX 5: Add metadata field that the socket service is trying to save
   metadata: {
     type: Schema.Types.Mixed,

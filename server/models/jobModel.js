@@ -1,3 +1,4 @@
+//server/models/jobModel.js
 const mongoose = require('mongoose');
 const { ObjectId } = mongoose.Schema;
 

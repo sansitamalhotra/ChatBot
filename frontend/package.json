@@ -93,6 +93,7 @@
     "react-file-viewer-v2": "^2.0.2",
     "react-fontawesome": "^1.7.1",
     "react-helmet": "^6.1.0",
+    "react-helmet-async": "^2.0.5",
     "react-hook-form": "^7.51.5",
     "react-hot-toast": "^2.4.1",
     "react-html-parser": "^2.0.2",

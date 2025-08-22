@@ -1,5 +1,6 @@
 //frontend/src/index.js
 import React from "react";
+import { HelmetProvider } from 'react-helmet-async';
 import { createRoot } from "react-dom/client";
 import { SocketProvider } from './Context/SocketContext';
 // eslint-disable-next-line
@@ -19,7 +20,9 @@ root.render(
       <AuthProvider>
         <SocketProvider>
            <Router>
-            <App />
+            <HelmetProvider>
+              <App />
+            </HelmetProvider>
           </Router>
        </SocketProvider>
       </AuthProvider>

@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { Link, useParams, useNavigate } from "react-router-dom";
-import { Helmet } from "react-helmet";
+import { Helmet } from "react-helmet-async";
 import API from '../../helpers/API';
 import AdminUsersTable from './components/AdminUsersTable';
 import moment from "moment";

@@ -320,30 +320,47 @@ const handleCancel = () => {
     };
 
     const handleAddJobSubmit = async (e) => {
-        e.preventDefault();
-        try
-        {
-            const formData = new FormData();
-            formData.append('title', title);
-            formData.append('description', description);
-            formData.append('qualification', qualification);
-            formData.append('workExperience', workExperience);
-            formData.append('workMode', workMode);
-            formData.append('sector', sector);
-            formData.append('country', country);
-            formData.append('province', province);
-            formData.append("deadlineDate", deadlineDate);
-            // formData.append("filePath", filePathInputRef.current.files[0]);
-            const response = await API.post('/api/v1/job/postJob', formData);
-            notifySucc(response.data);
-            navigate("/Admin/Manage-Jobs");
-        }
-        catch (error)
-        {
-            console.error('Something Went Wrong, Failed to Add New Job', error);
-            notifyErr("Opps!!! FAILED.. Something went wrong, New Job Failed to be added.");
-        }
-    };
+      e.preventDefault();
+      setLoading(true); // Set loading state
+      
+      try {
+          const formData = new FormData();
+          formData.append('title', title);
+          formData.append('description', description);
+          formData.append('qualification', qualification);
+          formData.append('workExperience', workExperience);
+          formData.append('workMode', workMode);
+          formData.append('sector', sector);
+          formData.append('country', country);
+          formData.append('province', province);
+          formData.append("deadlineDate", deadlineDate);
+          
+          const response = await API.post('/api/v1/job/postJob', formData);
+          
+          // Check if the response indicates success
+          if (response.data && response.data.success) {
+              notifySucc(response.data.message || "Job created successfully!");
+              
+              // Add a small delay to ensure the toast notification is shown
+              setTimeout(() => {
+                  navigate("/Admin/Manage-Jobs");
+              }, 500);
+          } else {
+              throw new Error(response.data?.message || "Job creation failed");
+          }
+      } catch (error) {
+          console.error('Something Went Wrong, Failed to Add New Job', error);
+          
+          // Handle different types of errors
+          if (error.response && error.response.data) {
+              notifyErr(error.response.data.message || error.response.data.error || "Failed to add new job");
+          } else {
+              notifyErr("Oops!!! FAILED.. Something went wrong, New Job Failed to be added.");
+          }
+      } finally {
+          setLoading(false); // Reset loading state
+      }
+  };
 
 
     return (
@@ -665,10 +682,16 @@ const handleCancel = () => {
                               </LocalizationProvider>
                             </div>
                         </div>                      
-                        <button type="submit" className="btn btn-gradient-primary me-2" disabled={loading}>
-                         {loading ? <Loader /> : "Add Job"}
-                        </button>
-                        <button className="btn btn-warning" onClick={handleCancel}>Cancel</button>
+                        <div className='row'>
+                          <div className='col-md-6'>
+                            <button type="submit" className="btn btn-gradient-primary me-2" disabled={loading}>
+                            {loading ? <Loader /> : "Add Job"}
+                            </button>
+                          </div>
+                          <div className='col-md-6'>
+                            <button className="btn btn-warning" onClick={handleCancel}>Cancel</button>
+                          </div>
+                        </div>
                     </form>
                     </div>
                   </div>

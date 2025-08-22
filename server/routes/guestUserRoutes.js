@@ -1,7 +1,7 @@
 //server/routes/guestUserRoutes.js
 const express = require('express');
 const router = express.Router();
-const { createGuestUser, getGuestUser } = require('../controllers/guestUserController');
+const { createGuestUser, getGuestUser} = require('../controllers/guestUserController');
 
 // POST /api/guest-users - Create new guest user
 router.post('/create-guest-user', createGuestUser);
@@ -10,7 +10,7 @@ router.post('/create-guest-user', createGuestUser);
 router.get('/:email', getGuestUser);
 
 // Guest session creation endpoint
-
+// router.post('/chat-sessions/guest', createGuestSession);
 
 // Guest user creation endpoint
 router.post('/guest-users', createGuestUser);

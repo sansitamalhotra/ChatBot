@@ -9,6 +9,8 @@ const GuestUser = require('../models/guestUserModel'); // FIXED: Added missing i
 const ChatTemplate = require('../models/chatTemplateModel'); // FIXED: Added missing import
 const templateCache = require('../services/chatTemplateCache');
 const { logWithIcon } = require('../services/consoleIcons');
+const agentAssignmentService = require('../services/agentAssignmentService');
+const { formatQuickReplies } = require('../services/chatUtils');
 
 class ChatSessionController {
   // Create new chat session
@@ -519,14 +521,11 @@ class ChatSessionController {
     try {
       const { sessionId } = req.params;
       const { skills = [], department } = req.body;
-      const userId = req.user.id;
+      const userId = req.user?.id;
 
-      const session = await ChatSession.findOne({ _id: sessionId, userId });
+      const session = await ChatSession.findOne({ _id: sessionId, userId: userId || null });
       if (!session) {
-        return res.status(404).json({
-          success: false,
-          message: 'Chat session not found'
-        });
+        return res.status(404).json({ success: false, message: 'Chat session not found' });
       }
 
       // Check business hours
@@ -534,22 +533,19 @@ class ChatSessionController {
       const isBusinessHours = businessHours ? businessHours.isCurrentlyOpen() : false;
 
       if (!isBusinessHours) {
-        // Create outside hours message
-        const outsideHoursMessage = new ChatMessage({
+        const outsideHoursMessage = businessHours?.outsideHoursMessage ||
+          "I'm sorry, but live agents are currently unavailable outside business hours.";
+
+        const outsideHoursMessageDoc = new ChatMessage({
           sessionId: session._id,
           senderId: session._id,
           senderModel: 'System',
           senderType: 'system',
-          message: businessHours?.outsideHoursMessage || 
-            "I'm sorry, but live agents are currently unavailable outside business hours.",
+          message: outsideHoursMessage,
           messageType: 'outside_hours_notice',
-          metadata: {
-            businessHoursMessage: true,
-            quickReplies: businessHours?.outsideHoursOptions || []
-          }
+          metadata: { businessHoursMessage: true, quickReplies: businessHours?.outsideHoursOptions || [] }
         });
-
-        await outsideHoursMessage.save();
+        await outsideHoursMessageDoc.save();
 
         return res.status(200).json({
           success: false,
@@ -557,17 +553,23 @@ class ChatSessionController {
           data: {
             isBusinessHours: false,
             nextAvailable: businessHours?.getNextAvailableTime(),
-            outsideHoursMessage: businessHours?.outsideHoursMessage,
+            outsideHoursMessage,
             alternatives: businessHours?.outsideHoursOptions
           }
         });
       }
 
-      // Find available agents
-      const availableAgents = await LiveAgent.findAvailableAgents(skills, department);
-      
-      if (availableAgents.length === 0) {
+      // Use the agentAssignmentService to find the best agent
+      const availableAgent = await agentAssignmentService.findAvailableAgent({
+        sessionId: session._id,
+        userPreferences: { category: session.selectedOption || session.metadata?.category || null },
+        businessHours: businessHours
+      });
+
+      if (!availableAgent) {
         session.status = 'waiting_for_agent';
+        session.agentRequested = true;
+        session.agentRequestedAt = new Date();
         await session.save();
 
         const waitingMessage = new ChatMessage({
@@ -577,9 +579,7 @@ class ChatSessionController {
           senderType: 'system',
           message: 'All our agents are currently busy. You have been added to the queue. Please wait while we connect you with the next available agent.',
           messageType: 'system_notification',
-          metadata: {
-            systemData: { queuePosition: await this.getQueuePosition(sessionId) }
-          }
+          metadata: { systemData: { queuePosition: await this.getQueuePosition(sessionId) } }
         });
 
         await waitingMessage.save();
@@ -595,63 +595,49 @@ class ChatSessionController {
         });
       }
 
-      // Assign best available agent
-      const selectedAgent = availableAgents[0];
-      await selectedAgent.assignChat();
+      // Assign agent centrally via service
+      const agentIdToAssign = availableAgent._id || availableAgent.userId;
+      const assignRes = await agentAssignmentService.assignAgentToSession(session._id, agentIdToAssign);
 
-      session.agentId = selectedAgent._id;
-      session.sessionType = 'live_agent';
-      session.status = 'active';
-      session.transferredAt = new Date();
-      await session.save();
+      if (!assignRes.success) {
+        return res.status(500).json({ success: false, message: 'Failed to assign agent', error: assignRes.error });
+      }
 
-      // Create agent assignment message
+      // Build assignment message content (handle both LiveAgent doc and user-agent POJO)
+      const agentDisplayName = availableAgent.name || `${availableAgent.firstname || ''} ${availableAgent.lastname || ''}`.trim() || 'Agent';
       const assignmentMessage = new ChatMessage({
         sessionId: session._id,
-        senderId: selectedAgent._id,
+        senderId: agentIdToAssign,
         senderModel: 'LiveAgent',
         senderType: 'agent',
-        message: `Hello! I'm ${selectedAgent.name} and I'll be assisting you today. How can I help you?`,
+        message: `Hello! I'm ${agentDisplayName} and I'll be assisting you today. How can I help you?`,
         messageType: 'transfer_notice',
         metadata: {
-          systemData: {
-            agentInfo: {
-              name: selectedAgent.name,
-              department: selectedAgent.department
-            }
-          }
+          systemData: { agentInfo: { name: agentDisplayName, department: availableAgent.department || 'general' } }
         }
       });
 
       await assignmentMessage.save();
 
       // Update metrics
-      const metrics = await ChatMetrics.findOne({ sessionId });
+      const metrics = await ChatMetrics.findOne({ sessionId: session._id });
       if (metrics) {
-        metrics.agentId = selectedAgent._id;
+        metrics.agentId = agentIdToAssign;
         metrics.waitTime = Math.floor((new Date() - session.createdAt) / 1000);
         await metrics.save();
       }
 
-      res.json({
+      return res.json({
         success: true,
         message: 'Agent assigned successfully',
         data: {
-          agent: {
-            id: selectedAgent._id,
-            name: selectedAgent.name,
-            department: selectedAgent.department
-          },
-          assignmentMessage
+          agent: { id: agentIdToAssign, name: agentDisplayName, department: availableAgent.department || 'general' },
+          assignmentMessage: assignmentMessage.toObject()
         }
       });
     } catch (error) {
       console.error('Error requesting agent:', error);
-      res.status(500).json({
-        success: false,
-        message: 'Error requesting agent assignment',
-        error: error.message
-      });
+      res.status(500).json({ success: false, message: 'Error requesting agent assignment', error: error.message });
     }
   }
 
@@ -991,8 +977,8 @@ class ChatSessionController {
       } else if (guestEmail) {
         // Guest user
         const guestUser = await GuestUser.findOne({ email: guestEmail.toLowerCase() });
-        hasAccess = guestUser && session.guestUserId && 
-                   session.guestUserId.toString() === guestUser._id.toString();
+        hasAccess = guestUser && session.guestUserId &&
+          session.guestUserId.toString() === guestUser._id.toString();
       }
 
       if (!hasAccess && req.user?.role !== 1) { // Allow admin access

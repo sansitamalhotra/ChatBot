@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState } from "react";
-import { Helmet } from "react-helmet";
+import { Helmet } from "react-helmet-async";
 import { Link, useNavigate, useLocation, useParams } from 'react-router-dom';
 import API from '../../helpers/API';
 import { useAuth } from "../../Context/AuthContext";

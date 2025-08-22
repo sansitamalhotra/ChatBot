@@ -1,3 +1,4 @@
+//server/models/guestUserModel.js
 const mongoose = require('mongoose');
 
 const guestUserSchema = new mongoose.Schema({
