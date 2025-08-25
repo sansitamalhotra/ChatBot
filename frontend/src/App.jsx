@@ -1,3 +1,4 @@
+//frontend/src/App.jsx
 import { useUserIdleTracker } from "./hooks/useUserIdleTracker"; 
 import React, { Suspense, lazy, useState, useEffect } from "react";
 import {
@@ -26,6 +27,8 @@ import { AdminRoute } from "./routes/AdminRoute";
 import { ApplicantRoute } from "./routes/ApplicantRoute";
 import { EmployerRoute } from "./routes/EmployerRoute";
 
+// import AdminChatSession from './components/AdminChat/AdminChatSession';
+
 const UnAuthorized = lazy(() => import('./features/UnAuthorized/UnAuthorized'));
 // Password Resources
 const ForgotPasswordReset = lazy(() => import("./features/Account/ForgotPasswordReset/ForgotPasswordReset"));
@@ -35,6 +38,10 @@ const TestHome = lazy(() => import("./Pages/Home"));
 
 const TestAdminDashboardHome = lazy(() => import('./Pages/Admin/Home'));
 const SuperAdminDashboardHome = lazy(() => import('./Pages/Super-Admin/Home'));
+// const AdminChatSession = lazy(() => import('./components/AdminChat/AdminChatSession'));
+
+const AdminLiveChat = lazy(() => import('./Pages/Admin/AdminLiveChat/AdminLiveChat'));
+const AdminChatList = lazy(() => import('./Pages/Admin/AdminChatList/AdminChatList'));
 
 const JobSearchInterface = lazy(() => import('./Pages/JobSearchInterface'));
 const TestLogin = lazy(() => import('./Pages/Login/Login'));
@@ -233,9 +240,13 @@ function App() {
           {/* ************************************** */}
 
           {/* Admin Routes */}
-          <Route path="/" element={<AdminRoute />}>
+          <Route element={<AdminRoute />}>
             {/* ##################################################################### */}
             <Route path="/Admin/Dashboard" element={<TestAdminDashboardHome />} />
+            <Route path="/Admin/*" element={<TestAdminDashboardHome />} /> 
+            {/* <Route path="/admin/chat/session/:sessionId" element={<AdminChatSession />} /> */}
+            <Route path="/admin/chat/session/:sessionId" element={<AdminLiveChat />} />
+            <Route path="/Admin/Chat-List" element={<AdminChatList />} />
             <Route path="/Admin/Add-Job" element={<AddTestJob />} />
             <Route path="/Admin/Manage-Jobs" element={<ManageTestJobs />} />
             <Route path="/Admin/Manage-Qualifications" element={<ManageAdminJobTestQualifications />} />

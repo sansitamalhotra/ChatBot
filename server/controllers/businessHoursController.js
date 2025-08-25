@@ -140,6 +140,7 @@ class BusinessHoursController {
     // For Checking if Current Time is Within Business Hours
     static async checkBusinessHoursStatus(req, res) {
         try {
+            const { timezone } = req.query; // Get timezone from query params
             const businessHours = await BusinessHours.findOne({ isActive: true });
             if (!businessHours) {
                 return res.status(404).json({
@@ -148,11 +149,14 @@ class BusinessHoursController {
                 });
             }
             
-            const isOpen = await businessHoursUtil.isWithinBusinessHours();
-            const isNearClosingTime = await businessHoursUtil.isNearClosing();
-            const nextAvailable = await businessHoursUtil.getNextBusinessHour();
-            const allowNewChats = await businessHoursUtil.allowNewChats();
-            const minutesUntilClosing = await businessHoursUtil.getMinutesUntilClosing();
+            // Use the provided timezone or fall back to configured timezone
+            const effectiveTimezone = timezone || businessHours.timezone;
+            
+            const isOpen = await businessHoursUtil.isWithinBusinessHours(effectiveTimezone);
+            const isNearClosingTime = await businessHoursUtil.isNearClosing(effectiveTimezone);
+            const nextAvailable = await businessHoursUtil.getNextBusinessHour(effectiveTimezone);
+            const allowNewChats = await businessHoursUtil.allowNewChats(effectiveTimezone);
+            const minutesUntilClosing = await businessHoursUtil.getMinutesUntilClosing(effectiveTimezone);
 
             res.json({
                 success: true,
@@ -162,8 +166,8 @@ class BusinessHoursController {
                     allowNewChats,
                     minutesUntilClosing,
                     nextAvailable,
-                    currentTime: businessHoursUtil.getCurrentESTTime(),
-                    timezone: businessHours.timezone,
+                    currentTime: businessHoursUtil.getCurrentTime(effectiveTimezone),
+                    timezone: effectiveTimezone,
                     workingHours: businessHoursUtil.getFormattedBusinessHours(businessHours),
                     outsideHoursMessage: isOpen ? null : await businessHoursUtil.getOutsideHoursMessage(req.user || {}),
                     outsideHoursOptions: isOpen ? null : businessHours.outsideHoursOptions

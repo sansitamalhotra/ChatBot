@@ -837,7 +837,7 @@ class ChatMessageController {
             }
             if (message.includes('partner') || message.includes('partnership') || message.includes('collaborate')) {
                 return {
-                    message: "I can provide information about partnership opportunities with PSPL. What would you like to know?",
+                    message: "I can provide information about partnership opportunities with ProsoftSynergies. What would you like to know?",
                     messageType: 'text',
                     quickReplies: [{
                             text: 'Partnership Info',

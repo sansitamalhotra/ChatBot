@@ -76,6 +76,7 @@
   background: #0b6ea9;
   color: #fff;
   padding: 10px 14px;
+  cursor: pointer;
 }
 .chat-header-left {
   display: flex;

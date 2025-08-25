@@ -21,6 +21,7 @@ const { logWithIcon } = require('./consoleIcons');
 const ChatMessageController = require('../controllers/chatMessageController');
 const businessHoursAdapter = require('./businessHoursAdapter');
 const chatTemplateCache = require('./chatTemplateCache');
+const { registerAdminChatHandler } = require('./adminChatHandlers');
 const { notifyAdminsOfPendingRequest, generateUniqueAgentUrl } = require('./adminNotificationService');
 
 const VALID_STATUSES = ['offline', 'online', 'active', 'idle', 'away'];
@@ -31,6 +32,101 @@ const VALID_ACTIVITY_TYPES = [
   'page_focus', 'page_blur', 'mouse_activity', 'keyboard_activity',
   'manual_override', 'page_unload', 'component_unmount'
 ];
+
+// Socket authentication middleware
+const socketAuthMiddleware = async (socket, next) => {
+  try {
+    const token = socket.handshake.auth.token;
+    
+    if (!token) {
+      return next(new Error('Authentication error: No token provided'));
+    }
+    
+    const decoded = jwt.verify(token, process.env.JWT_SECRET_KEY);
+    const user = await User.findById(decoded.userId);
+    
+    if (!user) {
+      return next(new Error('Authentication error: User not found'));
+    }
+    
+    if (user.isBlocked) {
+      return next(new Error('Authentication error: Account blocked'));
+    }
+    
+    // Attach user info to socket
+    socket.user = {
+      _id: user._id,
+      userId: user._id.toString(),
+      firstname: user.firstname,
+      lastname: user.lastname,
+      email: user.email,
+      role: user.role,
+      photo: user.photo
+    };
+    
+    next();
+  } catch (error) {
+    next(new Error('Authentication error: Invalid token'));
+  }
+};
+
+// Initialize socket service
+const initializeSocketService = (io) => {
+  // Use authentication middleware
+  io.use(socketAuthMiddleware);
+  
+  io.on('connection', async (socket) => {
+    console.log('User connected:', socket.id, socket.user);
+    
+    // Attach business hours info
+    try {
+      const detailed = await businessHoursAdapter.getDetailedStatus();
+      socket.businessHoursInfo = detailed || null;
+      socket.isBusinessHours = !!(detailed && detailed.isOpen);
+    } catch (err) {
+      logWithIcon.error('businessHoursAdapter.getDetailedStatus error:', err);
+      socket.businessHoursInfo = null;
+      socket.isBusinessHours = false;
+    }
+
+    // Join admin room if user is admin
+    if (socket.user.role === 1) {
+      socket.join('admins');
+      console.log(`Admin ${socket.user.firstname} ${socket.user.lastname} joined admins room`);
+      
+      // Register admin chat handlers
+      registerAdminChatHandlers(io, socket);
+    }
+
+    // Handle user activity events
+    socket.on('user:activity', async (data) => {
+      await handleUserActivity(socket, io, data);
+    });
+    
+    socket.on('activity:specific', async (data) => {
+      await handleSpecificActivity(socket, io, data);
+    });
+
+    // Handle chat events
+    socket.on('session:create', async (payload, ack) => {
+      await handleChatSessionCreate(socket, io, payload, ack);
+    });
+    
+    socket.on('session:join', async (payload, ack) => {
+      await handleJoinSession(socket, io, payload, ack);
+    });
+    
+    socket.on('message:send', async (payload, ack) => {
+      await handleMessageSend(socket, io, payload, ack);
+    });
+
+    // Handle disconnection
+    socket.on('disconnect', async (reason) => {
+      await handleDisconnect(socket, io, reason);
+    });
+  });
+};
+
 
 // Utility: generate a unique message id
 const generateUniqueMessageId = () => {
@@ -151,6 +247,8 @@ const getUserInfo = (user) => {
     isGuest: false
   };
 };
+
+
 
 // Update user's status in DB
 const updateUserStatus = async (userId, status, additionalData = {}, ipAddress = 'unknown', socketId = null) => {
@@ -1114,7 +1212,7 @@ const handleLiveAgentRequest = async (socket, io, params = {}) => {
         senderId: sessionId,
         senderModel: 'System',
         senderType: 'bot',
-        message: "🔄 Thank you — connecting you with a live agent. Please hold on a moment.",
+        message: "Please remain on the line while I connect you to a live agent. Just a moment...",
         messageType: 'system_response',
         metadata: { id: generateUniqueMessageId(), isAgentConnecting: true, noEncryption: true }
       });
@@ -1193,7 +1291,7 @@ const handleLiveAgentRequest = async (socket, io, params = {}) => {
             senderId: sessionId,
             senderModel: 'System',
             senderType: 'bot',
-            message: `⏳ We have notified our team. Please stay connected—someone will join shortly.`,
+            message: `We appreciate your patience; one of our agents will connect with you shortly.`,
             messageType: 'system_waiting',
             metadata: { id: generateUniqueMessageId(), adminNotified: !!notifyResult?.emailNotification?.success, noEncryption: true }
           });
@@ -1475,5 +1573,7 @@ module.exports = {
   updateUserStatus,
   getClientIP,
   createUserInfo,
-  generateUniqueMessageId
+  generateUniqueMessageId,
+  initializeSocketService,
+  socketAuthMiddleware,
 };
