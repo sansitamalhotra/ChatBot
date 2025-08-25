@@ -182,6 +182,39 @@ setupSocketHandlers(io);
 const environment = process.env.NODE_ENV;
 //const environment = process.env.NODE_ENV_PROD;
 
+// IMPORTANT: API routes must be defined BEFORE serving static files and catch-all route
+// Auth Routes
+app.use("/api/v1/admin", require("./routes/adminRoutes"));
+app.use("/api/v1/superAdmin", require("./routes/superAdminRoutes"));
+app.use("/api/v1/auth", require('./routes/authRoutes'));
+
+// Other Routes
+app.use("/api/v1/country/", require('./routes/countryRoutes'));
+app.use("/api/v1/sector/", require('./routes/sectorRoutes'));
+app.use("/api/v1/workAuthorization/", require("./routes/workAuthorizationRoute"));
+app.use("/api/v1/workMode/", require("./routes/workModeRoutes"));
+app.use("/api/v1/workExperience/", require("./routes/workExperienceRoutes"));
+app.use("/api/v1/qualification/", require("./routes/qualificationRoutes"));
+app.use("/api/v1/apply", require("./routes/applicantJobApplicationRoutes"));
+app.use("/api/v1/salary", require('./routes/salaryRoutes'));
+app.use("/api/v1/province", require("./routes/provinceRoutes"));
+app.use("/api/v1/city/", require("./routes/cityRoutes"));
+app.use("/api/v1/job/", require("./routes/jobRoutes"));
+app.use("/api/v1/contact", require("./routes/contactRoutes"));
+app.use("/api/v1/applicant", require("./routes/applicantRoute"));
+app.use("/api/v1/resume", require("./routes/resumeRoutes"));
+app.use("/api/v1/subscribers", require("./routes/subscribeRoutes"));
+// app.use('/api/v1/liveAgent', require('./routes/liveAgentRoutes'));
+// app.use('/api/v1/chats', require('./routes/chatRoutes'));
+app.use("/api/v1/users", require("./routes/userRoutes"));
+app.use("/api/v1/photo", require("./routes/uploadUserPhotoRoutes"));
+
+app.use("/api/v1/businessHours", require("./routes/businessHoursRoutes"));
+app.use("/api/v1/onlineStatus", require("./routes/onlineStatusRoutes"));
+app.use("/api/v1/guestUsers", require("./routes/guestUserRoutes"));
+
+app.use('/api/v1/admin/chat', require("./routes/adminChatRoutes"));
+
 // API Routes section
 const staticPaths = {
   frontend: path.resolve(__dirname, './frontend/build'),
@@ -241,38 +274,8 @@ app.get("/", (req, res) => {
     `<h2 style="color: darkBlue;">ProsoftSynergies Database is Now Connected Successfully on Port ${PORT} ${environment} Mode </h2>`
   );
 });
-// IMPORTANT: API routes must be defined BEFORE serving static files and catch-all route
-// Auth Routes
-app.use("/api/v1/admin", require("./routes/adminRoutes"));
-app.use("/api/v1/superAdmin", require("./routes/superAdminRoutes"));
-app.use("/api/v1/auth", require('./routes/authRoutes'));
 
-// Other Routes
-app.use("/api/v1/country/", require('./routes/countryRoutes'));
-app.use("/api/v1/sector/", require('./routes/sectorRoutes'));
-app.use("/api/v1/workAuthorization/", require("./routes/workAuthorizationRoute"));
-app.use("/api/v1/workMode/", require("./routes/workModeRoutes"));
-app.use("/api/v1/workExperience/", require("./routes/workExperienceRoutes"));
-app.use("/api/v1/qualification/", require("./routes/qualificationRoutes"));
-app.use("/api/v1/apply", require("./routes/applicantJobApplicationRoutes"));
-app.use("/api/v1/salary", require('./routes/salaryRoutes'));
-app.use("/api/v1/province", require("./routes/provinceRoutes"));
-app.use("/api/v1/city/", require("./routes/cityRoutes"));
-app.use("/api/v1/job/", require("./routes/jobRoutes"));
-app.use("/api/v1/contact", require("./routes/contactRoutes"));
-app.use("/api/v1/applicant", require("./routes/applicantRoute"));
-app.use("/api/v1/resume", require("./routes/resumeRoutes"));
-app.use("/api/v1/subscribers", require("./routes/subscribeRoutes"));
-// app.use('/api/v1/liveAgent', require('./routes/liveAgentRoutes'));
-// app.use('/api/v1/chats', require('./routes/chatRoutes'));
-app.use("/api/v1/users", require("./routes/userRoutes"));
-app.use("/api/v1/photo", require("./routes/uploadUserPhotoRoutes"));
 
-app.use("/api/v1/businessHours", require("./routes/businessHoursRoutes"));
-app.use("/api/v1/onlineStatus", require("./routes/onlineStatusRoutes"));
-app.use("/api/v1/guestUsers", require("./routes/guestUserRoutes"));
-
-app.use('/api/v1/adminChatRoutes/admin/chat', require("./routes/adminChatRoutes"));
 
 // NOW serve frontend static files AFTER API routes are defined
 app.use(express.static(staticPaths.frontend));

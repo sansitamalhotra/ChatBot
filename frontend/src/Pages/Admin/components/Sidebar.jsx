@@ -196,6 +196,20 @@ const Sidebar = ({ isOpen }) => {
                 </li>
               </ul>
             </div>
+        </li>
+        <li className="nav-item">
+            <Link className="nav-link" data-bs-toggle="collapse" to="#livechatsupport" aria-expanded="false" aria-controls="livechatsupport">
+              <span className="menu-title">Live Chat Support</span>
+              <i className="menu-arrow"></i>
+              <i className="mdi mdi-message-text-outline menu-icon"></i>
+            </Link>
+            <div className="collapse" id="livechatsupport">
+              <ul className="nav flex-column sub-menu">
+                <li className="nav-item">
+                  <Link className="nav-link" to="/Admin/Chat-List"> Admin Chat List </Link>
+                </li>
+              </ul>
+            </div>
           </li>
           <li className="nav-item">
             <Link className="nav-link" to="/Admin/Email-Subscribers">

@@ -11,7 +11,7 @@ const { logWithIcon } = require('../services/consoleIcons');
  * GET /api/v1/admin/chat/sessions
  * Get all chat sessions with pagination and filtering
  */
-router.get('/sessions', requireLogin, isAdmin, async (req, res) => {
+router.get('/sessions', requireLogin, isAdminOrSuperAdmin, async (req, res) => {
   try {
     const {
       page = 1,
@@ -41,16 +41,14 @@ router.get('/sessions', requireLogin, isAdmin, async (req, res) => {
     const skip = (parseInt(page) - 1) * parseInt(limit);
     const sortObj = { [sortBy]: sortOrder === 'desc' ? -1 : 1 };
 
-    const [sessions, totalSessions] = await Promise.all([
-      ChatSession.find(query)
-        .sort(sortObj)
-        .skip(skip)
-        .limit(parseInt(limit))
-        .populate('agentId', 'firstname lastname email photo') // Fixed: use agentId instead of agent
-        .populate('lastMessage')
-        .lean(),
-      ChatSession.countDocuments(query)
-    ]);
+    // First, get the basic sessions
+    const sessions = await ChatSession.find(query)
+      .sort(sortObj)
+      .skip(skip)
+      .limit(parseInt(limit))
+      .lean();
+
+    const totalSessions = await ChatSession.countDocuments(query);
 
     // Get additional stats
     const [activeSessions, waitingSessions] = await Promise.all([
@@ -58,25 +56,50 @@ router.get('/sessions', requireLogin, isAdmin, async (req, res) => {
       ChatSession.countDocuments({ status: 'waiting' })
     ]);
 
-    // Enhance sessions with unread count
+    // Enhance sessions with additional data
     const enhancedSessions = await Promise.all(
       sessions.map(async (session) => {
-        const unreadCount = await ChatMessage.countDocuments({
-          sessionId: session._id,
-          senderType: 'user',
-          readByAgent: false
-        });
+        try {
+          // Get unread count
+          const unreadCount = await ChatMessage.countDocuments({
+            sessionId: session._id,
+            senderType: 'user',
+            readByAgent: false
+          });
 
-        const lastMessage = await ChatMessage.findOne({
-          sessionId: session._id
-        }).sort({ createdAt: -1 }).lean();
+          // Get last message
+          const lastMessage = await ChatMessage.findOne({
+            sessionId: session._id
+          }).sort({ createdAt: -1 }).lean();
 
-        return {
-          ...session,
-          agent: session.agentId, // Map agentId to agent for frontend compatibility
-          unreadCount,
-          lastMessage
-        };
+          // Get agent info if agentId exists
+          let agentInfo = null;
+          if (session.agentId) {
+            try {
+              agentInfo = await User.findById(session.agentId)
+                .select('firstname lastname email photo')
+                .lean();
+            } catch (agentErr) {
+              logWithIcon.warning(`Failed to fetch agent info for ${session.agentId}:`, agentErr.message);
+            }
+          }
+
+          return {
+            ...session,
+            agent: agentInfo, // Map agentId to agent for frontend compatibility
+            unreadCount: unreadCount || 0,
+            lastMessage: lastMessage || null
+          };
+        } catch (sessionErr) {
+          logWithIcon.error(`Error processing session ${session._id}:`, sessionErr.message);
+          // Return session with defaults if processing fails
+          return {
+            ...session,
+            agent: null,
+            unreadCount: 0,
+            lastMessage: null
+          };
+        }
       })
     );
 
@@ -104,7 +127,7 @@ router.get('/sessions', requireLogin, isAdmin, async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to fetch chat sessions',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
     });
   }
 });
@@ -113,21 +136,39 @@ router.get('/sessions', requireLogin, isAdmin, async (req, res) => {
  * GET /api/v1/admin/chat/session/:sessionId
  * Get specific chat session with messages
  */
-router.get('/session/:sessionId', requireLogin, isAdmin, async (req, res) => {
+router.get('/session/:sessionId', requireLogin, isAdminOrSuperAdmin, async (req, res) => {
   try {
     const { sessionId } = req.params;
     const { page = 1, limit = 50 } = req.query;
 
+    // Validate sessionId
+    if (!sessionId || !sessionId.match(/^[0-9a-fA-F]{24}$/)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid session ID format'
+      });
+    }
+
     // Find session
-    const session = await ChatSession.findById(sessionId)
-      .populate('agentId', 'firstname lastname email photo') // Fixed: use agentId
-      .lean();
+    const session = await ChatSession.findById(sessionId).lean();
 
     if (!session) {
       return res.status(404).json({
         success: false,
         message: 'Chat session not found'
       });
+    }
+
+    // Get agent info if exists
+    let agentInfo = null;
+    if (session.agentId) {
+      try {
+        agentInfo = await User.findById(session.agentId)
+          .select('firstname lastname email photo')
+          .lean();
+      } catch (agentErr) {
+        logWithIcon.warning(`Failed to fetch agent info:`, agentErr.message);
+      }
     }
 
     // Get messages with pagination
@@ -139,41 +180,49 @@ router.get('/session/:sessionId', requireLogin, isAdmin, async (req, res) => {
       .lean();
 
     // Mark messages as read by admin
-    await ChatMessage.updateMany(
-      {
-        sessionId,
-        senderType: 'user',
-        readByAgent: false
-      },
-      {
-        readByAgent: true,
-        readByAgentAt: new Date(),
-        readByAgentId: req.user._id
-      }
-    );
+    try {
+      await ChatMessage.updateMany(
+        {
+          sessionId,
+          senderType: 'user',
+          readByAgent: false
+        },
+        {
+          readByAgent: true,
+          readByAgentAt: new Date(),
+          readByAgentId: req.user._id
+        }
+      );
+    } catch (updateErr) {
+      logWithIcon.warning('Failed to mark messages as read:', updateErr.message);
+    }
 
     // Get user info
     let userInfo = session.userInfo || {};
     if (session.userId) {
-      const user = await User.findById(session.userId)
-        .select('firstname lastname email photo')
-        .lean();
-      if (user) {
-        userInfo = {
-          ...userInfo,
-          firstName: user.firstname,
-          lastName: user.lastname,
-          email: user.email,
-          photo: user.photo,
-          userId: user._id
-        };
+      try {
+        const user = await User.findById(session.userId)
+          .select('firstname lastname email photo')
+          .lean();
+        if (user) {
+          userInfo = {
+            ...userInfo,
+            firstName: user.firstname,
+            lastName: user.lastname,
+            email: user.email,
+            photo: user.photo,
+            userId: user._id
+          };
+        }
+      } catch (userErr) {
+        logWithIcon.warning('Failed to fetch user info:', userErr.message);
       }
     }
 
-    // Map agentId to agent for frontend compatibility
+    // Prepare session with agent info
     const sessionWithAgent = {
       ...session,
-      agent: session.agentId
+      agent: agentInfo
     };
 
     logWithIcon.success(`Admin ${req.user._id} accessed chat session ${sessionId}`);
@@ -192,7 +241,7 @@ router.get('/session/:sessionId', requireLogin, isAdmin, async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to fetch chat session',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
     });
   }
 });
@@ -201,10 +250,18 @@ router.get('/session/:sessionId', requireLogin, isAdmin, async (req, res) => {
  * POST /api/v1/admin/chat/assign/:sessionId
  * Assign admin to chat session
  */
-router.post('/assign/:sessionId', requireLogin, isAdmin, async (req, res) => {
+router.post('/assign/:sessionId', requireLogin, isAdminOrSuperAdmin, async (req, res) => {
   try {
     const { sessionId } = req.params;
     const adminId = req.user._id;
+
+    // Validate sessionId
+    if (!sessionId || !sessionId.match(/^[0-9a-fA-F]{24}$/)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid session ID format'
+      });
+    }
 
     const session = await ChatSession.findById(sessionId);
     if (!session) {
@@ -221,7 +278,7 @@ router.post('/assign/:sessionId', requireLogin, isAdmin, async (req, res) => {
       });
     }
 
-    // Fixed: use agentId instead of agent
+    // Check if already assigned to another agent
     if (session.agentId && session.agentId.toString() !== adminId.toString()) {
       return res.status(400).json({
         success: false,
@@ -235,19 +292,23 @@ router.post('/assign/:sessionId', requireLogin, isAdmin, async (req, res) => {
     session.assignedAt = new Date();
     await session.save();
 
-    // Emit socket event to notify user
-    if (req.app.get('io')) {
-      const io = req.app.get('io');
-      io.to(`session:${sessionId}`).emit('session:agent_assigned', {
-        sessionId,
-        agent: {
-          _id: req.user._id,
-          firstname: req.user.firstname,
-          lastname: req.user.lastname,
-          photo: req.user.photo
-        },
-        assignedAt: session.assignedAt
-      });
+    // Emit socket event to notify user if socket.io is available
+    try {
+      if (req.app.get('io')) {
+        const io = req.app.get('io');
+        io.to(`session:${sessionId}`).emit('session:agent_assigned', {
+          sessionId,
+          agent: {
+            _id: req.user._id,
+            firstname: req.user.firstname,
+            lastname: req.user.lastname,
+            photo: req.user.photo
+          },
+          assignedAt: session.assignedAt
+        });
+      }
+    } catch (socketErr) {
+      logWithIcon.warning('Failed to emit socket event:', socketErr.message);
     }
 
     logWithIcon.success(`Admin ${adminId} assigned to chat session ${sessionId}`);
@@ -262,7 +323,7 @@ router.post('/assign/:sessionId', requireLogin, isAdmin, async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to assign session',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
     });
   }
 });
@@ -271,10 +332,18 @@ router.post('/assign/:sessionId', requireLogin, isAdmin, async (req, res) => {
  * POST /api/v1/admin/chat/end/:sessionId
  * End chat session
  */
-router.post('/end/:sessionId', requireLogin, isAdmin, async (req, res) => {
+router.post('/end/:sessionId', requireLogin, isAdminOrSuperAdmin, async (req, res) => {
   try {
     const { sessionId } = req.params;
     const { reason = 'ended_by_agent' } = req.body;
+
+    // Validate sessionId
+    if (!sessionId || !sessionId.match(/^[0-9a-fA-F]{24}$/)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid session ID format'
+      });
+    }
 
     const session = await ChatSession.findById(sessionId);
     if (!session) {
@@ -299,29 +368,33 @@ router.post('/end/:sessionId', requireLogin, isAdmin, async (req, res) => {
     await session.save();
 
     // Send closing message
-    const closingMessage = new ChatMessage({
-      sessionId,
-      message: 'This chat session has been ended by the agent. Thank you for contacting us!',
-      senderType: 'bot',
-      senderId: 'system',
-      metadata: {
-        systemMessage: true,
-        reason: 'session_ended'
-      }
-    });
-    await closingMessage.save();
-
-    // Emit socket event
-    if (req.app.get('io')) {
-      const io = req.app.get('io');
-      io.to(`session:${sessionId}`).emit('session:ended', {
+    try {
+      const closingMessage = new ChatMessage({
         sessionId,
-        endedAt: session.endedAt,
-        endedBy: req.user._id,
-        reason
+        message: 'This chat session has been ended by the agent. Thank you for contacting us!',
+        senderType: 'bot',
+        senderId: 'system',
+        metadata: {
+          systemMessage: true,
+          reason: 'session_ended'
+        }
       });
+      await closingMessage.save();
 
-      io.to(`session:${sessionId}`).emit('message:new', closingMessage);
+      // Emit socket events if available
+      if (req.app.get('io')) {
+        const io = req.app.get('io');
+        io.to(`session:${sessionId}`).emit('session:ended', {
+          sessionId,
+          endedAt: session.endedAt,
+          endedBy: req.user._id,
+          reason
+        });
+
+        io.to(`session:${sessionId}`).emit('message:new', closingMessage);
+      }
+    } catch (messageErr) {
+      logWithIcon.warning('Failed to send closing message:', messageErr.message);
     }
 
     logWithIcon.success(`Admin ${req.user._id} ended chat session ${sessionId}`);
@@ -336,7 +409,7 @@ router.post('/end/:sessionId', requireLogin, isAdmin, async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to end session',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
     });
   }
 });
@@ -345,7 +418,7 @@ router.post('/end/:sessionId', requireLogin, isAdmin, async (req, res) => {
  * GET /api/v1/admin/chat/stats
  * Get chat statistics for dashboard
  */
-router.get('/stats', requireLogin, isAdmin, async (req, res) => {
+router.get('/stats', requireLogin, isAdminOrSuperAdmin, async (req, res) => {
   try {
     const { period = '24h' } = req.query;
     
@@ -377,16 +450,17 @@ router.get('/stats', requireLogin, isAdmin, async (req, res) => {
       averageResponseTime,
       totalMessages
     ] = await Promise.all([
-      ChatSession.countDocuments(),
-      ChatSession.countDocuments({ status: 'active' }),
-      ChatSession.countDocuments({ status: 'waiting' }),
-      ChatSession.countDocuments({ status: 'ended' }),
-      ChatSession.countDocuments({ createdAt: { $gte: startDate } }),
+      ChatSession.countDocuments().catch(() => 0),
+      ChatSession.countDocuments({ status: 'active' }).catch(() => 0),
+      ChatSession.countDocuments({ status: 'waiting' }).catch(() => 0),
+      ChatSession.countDocuments({ status: 'ended' }).catch(() => 0),
+      ChatSession.countDocuments({ createdAt: { $gte: startDate } }).catch(() => 0),
       ChatMessage.aggregate([
         {
           $match: {
             senderType: 'agent',
-            createdAt: { $gte: startDate }
+            createdAt: { $gte: startDate },
+            responseTime: { $exists: true, $ne: null }
           }
         },
         {
@@ -395,8 +469,8 @@ router.get('/stats', requireLogin, isAdmin, async (req, res) => {
             avgResponseTime: { $avg: '$responseTime' }
           }
         }
-      ]),
-      ChatMessage.countDocuments({ createdAt: { $gte: startDate } })
+      ]).catch(() => []),
+      ChatMessage.countDocuments({ createdAt: { $gte: startDate } }).catch(() => 0)
     ]);
 
     const stats = {
@@ -405,7 +479,7 @@ router.get('/stats', requireLogin, isAdmin, async (req, res) => {
       waitingSessions,
       endedSessions,
       recentSessions,
-      averageResponseTime: averageResponseTime[0]?.avgResponseTime || 0,
+      averageResponseTime: averageResponseTime.length > 0 ? averageResponseTime[0].avgResponseTime : 0,
       totalMessages,
       period
     };
@@ -421,7 +495,7 @@ router.get('/stats', requireLogin, isAdmin, async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to fetch statistics',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
     });
   }
 });

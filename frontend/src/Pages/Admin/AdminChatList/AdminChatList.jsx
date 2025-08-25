@@ -46,7 +46,7 @@ const AdminChatList = () => {
     return 'Just now';
   }, []);
 
-  // Load chat sessions
+  // Load chat sessions - moved before the useEffect that uses it
   const loadSessions = useCallback(async () => {
     setIsLoading(true);
     setError(null);
@@ -67,11 +67,25 @@ const AdminChatList = () => {
       }
     } catch (err) {
       console.error('Error loading sessions:', err);
-      setError(err.response?.data?.message || 'Failed to load chat sessions');
+      if (err.response?.status === 404) {
+      setError('Chat feature not available. Please contact administrator.');
+      } else {
+        setError(err.response?.data?.message || 'Failed to load chat sessions');
+      }
     } finally {
       setIsLoading(false);
     }
   }, []);
+
+  // Admin permission check and initial load
+  useEffect(() => {
+    if (!adminUser || (adminUser.role !== 1 && adminUser.role !== 0)) {
+      // Redirect if not admin/superadmin
+      window.location.href = '/Admin/Dashboard';
+      return;
+    }
+    loadSessions();
+  }, [adminUser, loadSessions]);
 
   // Filter and search sessions
   useEffect(() => {
@@ -142,11 +156,6 @@ const AdminChatList = () => {
       socket.off('message:new', handleNewMessage);
     };
   }, [socket]);
-
-  // Load sessions on mount
-  useEffect(() => {
-    loadSessions();
-  }, [loadSessions]);
 
   // Handle session assignment
   const assignSession = useCallback(async (sessionId) => {
