@@ -737,8 +737,8 @@ const ChatBotIcon = () => {
           await createSession();
         } else {
           console.log('Socket connection status:', {
-            hasSocket: !!activeSocket,
-            isConnected: activeSocket?.connected,
+            hasSocket: !!socket,
+            isConnected: socket?.connected,
             hasSession: !!session
           });
         }
