@@ -436,8 +436,7 @@ const User = require('../models/userModel');
 const { logWithIcon } = require('./consoleIcons');
 
 const FRONTEND_BASE_URL = process.env.FRONTEND_BASE_URL || 'http://localhost:3000';
-//const FRONTEND_BASE_URL = process.env.FRONTEND_BASE_URL || 'http://localhost:3000';
-const SUPPORT_EMAIL = process.env.SUPPORT_EMAIL || process.env.SMPT_USERNAME || 'support@prosoftsynergies.com';
+const SUPPORT_EMAIL = process.env.SUPPORT_EMAIL || process.env.SMTP_USERNAME || 'info@smsoftconsulting.com';
 
 const generateUniqueAgentUrl = (sessionId, messageId) => {
   try {
@@ -455,28 +454,204 @@ const generateUniqueAgentUrl = (sessionId, messageId) => {
   }
 };
 
-const createTransporter = () => {
+const createTransporter = async () => {
   const host = process.env.SMTP_HOST;
   const port = parseInt(process.env.SMTP_PORT, 10) || 587;
-  const user = process.env.SMPT_USERNAME;
+  const user = process.env.SMTP_USERNAME;
   const pass = process.env.SMTP_PASSWORD;
-  const secure = (process.env.SMTP_SECURE === 'false') || port === 465;
-
+  
+  // Fix the secure logic - Gmail with port 587 should use STARTTLS (secure: false)
+  const secure = port === 465; // Only use SSL/TLS for port 465
+  
+  // **Enhanced validation with detailed logging**
+  logWithIcon.info('Environment variables check:', {
+    SMTP_HOST: host ? 'SET' : 'MISSING',
+    SMTP_PORT: process.env.SMTP_PORT || 'DEFAULT(587)',
+    SMTP_SERVICE: process.env.SMTP_SERVICE || 'NOT SET',
+    SMTP_USERNAME: user ? 'SET' : 'MISSING',
+    SMTP_PASSWORD: pass ? `SET(${pass.length} chars)` : 'MISSING'
+  });
+  
   // If SMTP not configured return null to skip sending emails but still send sockets
-  if (!host || !user || !pass) {
-    logWithIcon.warning('SMTP not fully configured (SMTP_HOST/SMTP_USER/SMTP_PASS required). Email sending will be skipped.');
+  if (!user || !pass) {
+    logWithIcon.error('SMTP_USERNAME or SMTP_PASSWORD is missing from environment variables');
+    logWithIcon.warning('Email sending will be skipped. Only socket notifications will work.');
     return null;
   }
 
-  return nodemailer.createTransport({
+  // **FIX: Validate Gmail App Password format**
+  if ((process.env.SMTP_SERVICE === 'gmail' || host === 'smtp.gmail.com') && pass) {
+    // Gmail App Passwords should be 16 characters (may have spaces)
+    const cleanPassword = pass.replace(/\s+/g, ''); // Remove all spaces
+    if (cleanPassword.length !== 16) {
+      logWithIcon.error('Gmail App Password should be 16 characters long. Current length:', cleanPassword.length);
+      logWithIcon.warning('Make sure you are using a Gmail App Password, not your regular Gmail password');
+      logWithIcon.info('To create App Password: Google Account > Security > 2-Step Verification > App Passwords');
+    }
+  }
+
+  // Log configuration for debugging (without exposing password)
+  logWithIcon.info('SMTP Configuration:', {
     host,
     port,
     secure,
-    auth: { user, pass },
-    connectionTimeout: parseInt(process.env.SMTP_CONNECTION_TIMEOUT || '30000', 10),
-    greetingTimeout: parseInt(process.env.SMTP_GREETING_TIMEOUT || '30000', 10),
-    tls: { rejectUnauthorized: false }
+    user,
+    service: process.env.SMTP_SERVICE || 'not set',
+    passwordFormat: pass ? `${pass.substring(0, 4)} ${pass.length > 4 ? '****' : ''}` : 'not set'
   });
+
+  // **FIX: Proper Gmail SMTP configuration for 2024 with better timeout settings**
+  const transportConfig = {
+    service: 'gmail', // Use service instead of host for Gmail
+    auth: {
+      user,  // Gmail email address
+      pass   // Gmail App Password (16-digit, space-separated)
+    },
+    // **FIX: Increased timeouts for better connection reliability**
+    connectionTimeout: 120000, // 2 minutes (increased from 60s)
+    greetingTimeout: 60000,    // 1 minute (increased from 30s)
+    socketTimeout: 120000,     // 2 minutes (increased from 60s)
+    // Gmail-specific settings for better connectivity
+    pool: true, // Use connection pooling
+    maxConnections: 1, // Limit concurrent connections
+    maxMessages: 3,    // Messages per connection
+    tls: {
+      rejectUnauthorized: false,
+      // Additional TLS options for Gmail connectivity issues
+      servername: 'smtp.gmail.com',
+      minVersion: 'TLSv1.2'
+    }
+  };
+
+  // **FIX: Fallback to explicit host/port if service fails**
+  // Some networks block the service approach, so we'll try explicit config as backup
+  const fallbackConfig = {
+    host: 'smtp.gmail.com',
+    port: 587,
+    secure: false, // Use STARTTLS
+    auth: {
+      user,
+      pass
+    },
+    connectionTimeout: 120000,
+    greetingTimeout: 60000,
+    socketTimeout: 120000,
+    pool: true,
+    maxConnections: 1,
+    tls: {
+      rejectUnauthorized: false,
+      servername: 'smtp.gmail.com',
+      minVersion: 'TLSv1.2'
+    }
+  };
+
+  // For non-Gmail providers, use explicit host/port configuration
+  if (process.env.SMTP_SERVICE !== 'gmail' && host !== 'smtp.gmail.com') {
+    // Remove service and add explicit config for other providers
+    delete transportConfig.service;
+    transportConfig.host = host;
+    transportConfig.port = port;
+    transportConfig.secure = secure;
+    
+    logWithIcon.info('Using explicit SMTP configuration for non-Gmail provider');
+  } else {
+    logWithIcon.info('Using Gmail service configuration with fallback option');
+  }
+
+  try {
+    logWithIcon.info('Creating SMTP transporter with config:', {
+      service: transportConfig.service,
+      host: transportConfig.host,
+      port: transportConfig.port,
+      secure: transportConfig.secure,
+      auth: { user: transportConfig.auth.user, pass: transportConfig.auth.pass ? '[PROVIDED]' : '[MISSING]' },
+      connectionTimeout: transportConfig.connectionTimeout,
+      pool: transportConfig.pool
+    });
+    
+    let transporter = nodemailer.createTransport(transportConfig);
+    
+    // **FIX: Try connection with retry logic and fallback**
+    try {
+      logWithIcon.info('Testing SMTP connection (attempt 1 - service mode)...');
+      await transporter.verify();
+      logWithIcon.success('SMTP server connection verified successfully');
+      return transporter;
+    } catch (verifyError) {
+      logWithIcon.error('SMTP connection verification failed (service mode):', {
+        message: verifyError.message,
+        code: verifyError.code,
+        errno: verifyError.errno,
+        response: verifyError.response,
+        responseCode: verifyError.responseCode,
+        command: verifyError.command
+      });
+      
+      // **FIX: Try fallback configuration for connection issues**
+      if (verifyError.code === 'ECONNECTION' || verifyError.code === 'ETIMEDOUT' || verifyError.code === 'ENOTFOUND') {
+        logWithIcon.info('Trying fallback SMTP configuration (explicit host/port)...');
+        
+        try {
+          // Close the first transporter
+          if (transporter && typeof transporter.close === 'function') {
+            transporter.close();
+          }
+          
+          // Create new transporter with fallback config
+          transporter = nodemailer.createTransport(fallbackConfig);
+          
+          logWithIcon.info('Testing fallback SMTP connection...');
+          await transporter.verify();
+          logWithIcon.success('Fallback SMTP connection verified successfully');
+          return transporter;
+          
+        } catch (fallbackError) {
+          logWithIcon.error('Fallback SMTP connection also failed:', {
+            message: fallbackError.message,
+            code: fallbackError.code,
+            errno: fallbackError.errno
+          });
+          
+          // Return null for connection failures
+          return null;
+        }
+      }
+      
+      // **FIX: For Gmail auth errors, return null immediately**
+      if (verifyError.code === 'EAUTH') {
+        logWithIcon.error('Authentication failed - check your Gmail App Password');
+        logWithIcon.info('Gmail troubleshooting:');
+        logWithIcon.info('1. Enable 2-Step Verification in Gmail');
+        logWithIcon.info('2. Generate App Password: Google Account > Security > App Passwords');
+        logWithIcon.info('3. Use the 16-digit app password (not your regular password)');
+        return null;
+      }
+      
+      // For other errors, still return transporter as sending might work
+      logWithIcon.warning('SMTP verification failed but returning transporter for retry logic');
+      return transporter;
+    }
+    
+  } catch (error) {
+    logWithIcon.error('Failed to create SMTP transporter:', {
+      message: error.message,
+      code: error.code,
+      errno: error.errno,
+      stack: error.stack
+    });
+    
+    // Log specific common errors
+    if (error.message.includes('getaddrinfo ENOTFOUND')) {
+      logWithIcon.error('DNS resolution failed - check internet connection or use explicit host/port');
+    } else if (error.message.includes('Invalid login')) {
+      logWithIcon.error('Invalid credentials - check SMTP_USERNAME and SMTP_PASSWORD');
+    } else if (error.message.includes('ECONNECTION') || error.message.includes('ETIMEDOUT')) {
+      logWithIcon.error('Network connectivity issue - check firewall/proxy settings');
+      logWithIcon.info('Try: 1) Different network, 2) VPN, 3) Check corporate firewall');
+    }
+    
+    return null;
+  }
 };
 
 /**
@@ -518,7 +693,7 @@ const notifyAdminsOfPendingRequest = async (io, payload = {}) => {
 
     // Prefer admin users who are online/active
     let admins = await User.find({
-      role: 1,
+      role: 1 || 3,
       currentStatus: { $in: ['online', 'active'] },
       isActive: { $ne: false }
     }).lean();
@@ -534,6 +709,17 @@ const notifyAdminsOfPendingRequest = async (io, payload = {}) => {
       result.emailNotification.details.push({ error: 'No admin users found' });
       return result;
     }
+
+    // Debug: Log admin details
+    logWithIcon.info('Admin users details:', admins.map(admin => ({
+      id: admin._id,
+      email: admin.email,
+      name: `${admin.firstname} ${admin.lastname}`,
+      role: admin.role,
+      currentStatus: admin.currentStatus,
+      isActive: admin.isActive,
+      hasEmail: !!admin.email
+    })));
 
     // Build payload for socket notify
     const socketPayload = {
@@ -575,59 +761,155 @@ const notifyAdminsOfPendingRequest = async (io, payload = {}) => {
     }
 
     // Prepare email - only if SMTP configured
-    const transporter = createTransporter();
+    const transporter = await createTransporter();
     if (!transporter) {
-      logWithIcon.warning('Skipping email notifications because transporter is not configured (missing env vars).');
+      logWithIcon.warning('Skipping email notifications because transporter is not configured.');
       result.emailNotification.details.push({ info: 'smtp_not_configured' });
       result.emailNotification.success = false;
       return result;
     }
 
+    // **FIX: Use consistent email configuration**
+    // Use the same email that's configured for authentication
+    const fromEmail = process.env.SMTP_USERNAME; // Use the authenticated email
+    const fromName = process.env.NOTIFICATION_FROM_NAME || 'Company Support System';
+    const fromAddress = `${fromName} <${fromEmail}>`;
+
     const subject = `[Live Chat] New live agent request — Session ${sessionId}`;
     const html = `
-      <p>Hello Admin,</p>
-      <p>A user has requested a live agent.</p>
-      <ul>
-        <li><strong>Session:</strong> ${sessionId}</li>
-        <li><strong>Message ID:</strong> ${messageId}</li>
-        <li><strong>User:</strong> ${userInfo?.firstName || userInfo?.firstname || 'Unknown'} ${userInfo?.lastName || ''} (${userInfo?.email || 'no-email'})</li>
-        <li><strong>IP:</strong> ${ipAddress || 'unknown'}</li>
-        <li><strong>Message:</strong> ${message ? (String(message).length > 200 ? String(message).substring(0, 200) + '…' : message) : 'N/A'}</li>
-        <li><strong>Business Hours:</strong> ${businessHours ? JSON.stringify(businessHours) : 'unknown'}</li>
-        <li><strong>Requested at:</strong> ${requestTime ? new Date(requestTime).toLocaleString() : new Date().toLocaleString()}</li>
-      </ul>
-      <p><a href="${uniqueUrl}" target="_blank" style="display:inline-block;padding:10px 14px;background:#007bff;color:#fff;border-radius:4px;text-decoration:none;">Open Chat Session</a></p>
-      <p>— System</p>
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #333;">New Live Agent Request</h2>
+        <p>Hello Admin,</p>
+        <p>A user has requested a live agent for assistance.</p>
+        
+        <div style="background: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0;">
+          <h3 style="margin-top: 0; color: #555;">Request Details:</h3>
+          <ul style="list-style: none; padding: 0;">
+            <li style="margin: 8px 0;"><strong>Session ID:</strong> ${sessionId}</li>
+            <li style="margin: 8px 0;"><strong>Message ID:</strong> ${messageId}</li>
+            <li style="margin: 8px 0;"><strong>User:</strong> ${userInfo?.firstName || userInfo?.firstname || 'Unknown'} ${userInfo?.lastName || ''} (${userInfo?.email || 'no-email'})</li>
+            <li style="margin: 8px 0;"><strong>IP Address:</strong> ${ipAddress || 'unknown'}</li>
+            <li style="margin: 8px 0;"><strong>Message:</strong> ${message ? (String(message).length > 200 ? String(message).substring(0, 200) + '…' : message) : 'N/A'}</li>
+            <li style="margin: 8px 0;"><strong>Requested at:</strong> ${requestTime ? new Date(requestTime).toLocaleString() : new Date().toLocaleString()}</li>
+          </ul>
+        </div>
+        
+        <div style="text-align: center; margin: 30px 0;">
+          <a href="${uniqueUrl}" target="_blank" style="display:inline-block;padding:12px 24px;background:#007bff;color:#fff;border-radius:5px;text-decoration:none;font-weight:bold;">Open Chat Session</a>
+        </div>
+        
+        <p style="color: #666; font-size: 12px;">
+          This is an automated notification from ${fromName}.<br>
+          Please respond to this request as soon as possible.
+        </p>
+      </div>
     `;
 
-    // Send email to each admin in parallel with detailed error logging
+    const getOnlineAdmins = async () => {
+      try {
+        const admins = await User.find({
+          role: 1, // Admin role
+          currentStatus: { $in: ['online', 'active'] },
+          email: { $exists: true, $ne: null },
+          isActive: { $ne: false }
+        }).select('_id firstname lastname email phone currentStatus socketId');
+
+        return admins.filter(admin => admin.email && admin.email.includes('@'));
+      } catch (error) {
+        logWithIcon.error('Error fetching online admin users:', error);
+        return [];
+      }
+    };
+
+    // Send email to each admin with better error handling
     const sendPromises = admins.map(async (admin) => {
       if (!admin.email) {
         logWithIcon.warning('Skipping admin without email:', admin._id);
         return { adminId: admin._id, email: null, success: false, error: 'no_email' };
       }
-      const mailOptions = { from: SUPPORT_EMAIL, to: admin.email, subject, html };
+
+      const mailOptions = {
+        from: fromAddress,
+        to: admin.email,
+        subject,
+        html,
+        // Add text version for better deliverability
+        text: `New Live Agent Request\n\nSession: ${sessionId}\nMessage ID: ${messageId}\nUser: ${userInfo?.firstName || 'Unknown'} (${userInfo?.email || 'no-email'})\nIP: ${ipAddress}\nRequested at: ${requestTime ? new Date(requestTime).toLocaleString() : new Date().toLocaleString()}\n\nOpen session: ${uniqueUrl}`
+      };
+
       try {
+        logWithIcon.info(`Attempting to send email to: ${admin.email}`);
         const info = await transporter.sendMail(mailOptions);
-        logWithIcon.success(`Email sent to admin ${admin.email}`, { messageId: info.messageId, adminId: admin._id });
-        return { adminId: admin._id, email: admin.email, success: true, messageId: info.messageId };
+        logWithIcon.success(`Email sent successfully to admin ${admin.email}`, { 
+          messageId: info.messageId, 
+          adminId: admin._id,
+          response: info.response 
+        });
+        return { 
+          adminId: admin._id, 
+          email: admin.email, 
+          success: true, 
+          messageId: info.messageId,
+          response: info.response 
+        };
       } catch (err) {
-        logWithIcon.error(`Error sending email to admin ${admin.email}:`, err);
-        return { adminId: admin._id, email: admin.email, success: false, error: err.message || String(err) };
+        logWithIcon.error(`Failed to send email to admin ${admin.email}:`, {
+          error: err.message,
+          code: err.code,
+          command: err.command,
+          errno: err.errno,
+          syscall: err.syscall,
+          hostname: err.hostname,
+          adminId: admin._id,
+          stack: err.stack
+        });
+        return { 
+          adminId: admin._id, 
+          email: admin.email, 
+          success: false, 
+          error: err.message || String(err),
+          code: err.code,
+          command: err.command 
+        };
       }
     });
 
     const emailResults = await Promise.all(sendPromises);
 
-    // Close transporter if possible (prevents hanging connections)
-    try { if (transporter && typeof transporter.close === 'function') transporter.close(); } catch (closeErr) { logWithIcon.warning('transporter.close() failed:', closeErr); }
+    // Close transporter gracefully
+    try {
+      if (transporter && typeof transporter.close === 'function') {
+        transporter.close();
+        logWithIcon.info('SMTP transporter closed successfully');
+      }
+    } catch (closeErr) {
+      logWithIcon.warning('transporter.close() failed:', closeErr.message);
+    }
 
     result.emailNotification.details = emailResults;
     result.emailNotification.success = emailResults.some(r => r.success === true);
 
+    // Log summary
+    const successCount = emailResults.filter(r => r.success).length;
+    const failureCount = emailResults.filter(r => !r.success).length;
+    
+    logWithIcon.info(`Email notification summary: ${successCount} sent, ${failureCount} failed`);
+    
+    if (failureCount > 0) {
+      const failedEmails = emailResults.filter(r => !r.success).map(r => `${r.email}: ${r.error || 'Unknown error'}`);
+      logWithIcon.error('Failed email details:', failedEmails);
+    }
+
     return result;
   } catch (error) {
-    logWithIcon.error('notifyAdminsOfPendingRequest overall error:', error);
+    logWithIcon.error('notifyAdminsOfPendingRequest overall error:', {
+      message: error.message,
+      stack: error.stack
+    });
+    result.emailNotification.details.push({ 
+      error: error.message,
+      type: 'system_error' 
+    });
     return result;
   }
 };

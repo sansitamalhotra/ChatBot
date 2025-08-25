@@ -1,4 +1,4 @@
-//frontend/src/components/ChatBotIcon/ChatBotIcon.jsx:
+// frontend/src/components/ChatBotIcon/ChatBotIcon.jsx
 import React, { useEffect, useRef, useState, useMemo, useCallback } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import ReactDOM from "react-dom";
@@ -42,16 +42,32 @@ const getProfileImageSrc = (userPhoto, isGuest = false) => {
     : userPhoto;
 };
 
+// Fixed fetchBusinessHours function with proper timezone and error handling
 async function fetchBusinessHours() {
   try {
-    const res = await API.get(`/api/v1/businessHours/checkBusinessHoursStatus`);
-    if (res.data.success) {
-      return res.data.data;
+    logWithIcon.info('Fetching business hours with Toronto timezone...');
+    const res = await API.get(`/api/v1/businessHours/checkBusinessHoursStatus`, {
+      params: {
+        timezone: 'America/Toronto' // Toronto timezone (EST/EDT)
+      }
+    });
+    
+    if (res.data && res.data.success && res.data.data) {
+      const businessData = res.data.data;
+      logWithIcon.success('Business hours fetched successfully:', {
+        isOpen: businessData.isOpen,
+        timezone: businessData.timezone,
+        currentTime: businessData.currentTime
+      });
+      return businessData;
+    } else {
+      logWithIcon.warning('Business hours API returned unexpected format:', res.data);
+      return null;
     }
   } catch (err) {
-    logWithIcon.error("Failed to fetch business hours", err);
+    logWithIcon.error("Failed to fetch business hours:", err);
+    return null;
   }
-  return null;
 }
 
 const ChatBotIcon = () => {
@@ -87,6 +103,7 @@ const ChatBotIcon = () => {
   const audioRef = useRef(null);
   const messagesEndRef = useRef(null);
   const quitTimeoutRef = useRef(null);
+  const businessHoursIntervalRef = useRef(null);
 
   const userFormSubmitted = useMemo(() => {
     if (userFromAuth) {
@@ -112,111 +129,124 @@ const ChatBotIcon = () => {
     [session]
   );
 
-  // Enhanced quit functionality with comprehensive cleanup - FIXED VERSION
+  // Enhanced quit functionality with comprehensive cleanup
   const handleQuit = useCallback(async () => {
-  if (isQuitting) {
-    console.warn('Quit already in progress, ignoring duplicate request');
-    return;
-  }
+    if (isQuitting) {
+      console.warn('Quit already in progress, ignoring duplicate request');
+      return;
+    }
 
-  console.log('Starting enhanced quit sequence...');
-  setIsQuitting(true);
+    console.log('Starting enhanced quit sequence...');
+    setIsQuitting(true);
 
-  try {
-    // 1. Immediately clear UI state to prevent freezing
-    setShowQuitConfirm(false);
-    setIsOpen(false);
-
-    // 2. Use setTimeout to defer heavy operations
-    setTimeout(() => {
-      // 3. Socket cleanup (non-blocking)
-      if (socket?.connected && session) {
-        socket.emit('session:end', { 
-          sessionId: session._id || session.id 
-        });
-        console.log('Socket session end signal sent');
+    try {
+      // 1. Clear business hours interval immediately
+      if (businessHoursIntervalRef.current) {
+        clearInterval(businessHoursIntervalRef.current);
+        businessHoursIntervalRef.current = null;
       }
 
-      // 4. Batch state updates to prevent multiple re-renders
-      ReactDOM.unstable_batchedUpdates(() => {
-        setMessages([]);
-        setSession(null);
-        setUnreadCount(0);
-        setDefaultMessagesLoaded(false);
-        setHasUserSentMessage(false);
-        setPendingMessages(new Set());
-        setInput("");
-      });
+      // 2. Immediately clear UI state to prevent freezing
+      setShowQuitConfirm(false);
+      setIsOpen(false);
 
-      // 5. Reset guest form states if applicable
-      if (!userFromAuth) {
-        setShowGuestForm(false);
-        setGuestFormSubmitted(false);
-        setGuestFormErrors({});
-        setIsSubmittingGuest(false);
-        setGuestInfo({
-          firstName: '',
-          lastName: '',
-          email: '',
-          phone: ''
-        });
-      }
-
-      // 6. localStorage cleanup (asynchronous)
+      // 3. Use setTimeout to defer heavy operations
       setTimeout(() => {
-        try {
-          const currentSessionKey = session ? (STORAGE_MESSAGES_PREFIX + (session.id || session._id)) : null;
-          
-          if (currentSessionKey) {
-            localStorage.removeItem(currentSessionKey);
-            console.log(`Cleared current session: ${currentSessionKey}`);
-          }
-          
-          // Clean up all chat-related storage
-          const keysToRemove = [];
-          for (let i = 0; i < localStorage.length; i++) {
-            const key = localStorage.key(i);
-            if (key && key.startsWith(STORAGE_MESSAGES_PREFIX)) {
-              keysToRemove.push(key);
-            }
-          }
-          
-          keysToRemove.forEach(key => {
-            localStorage.removeItem(key);
-            console.log(`Cleaned up: ${key}`);
+        // 4. Socket cleanup (non-blocking)
+        if (socket?.connected && session) {
+          socket.emit('session:end', { 
+            sessionId: session._id || session.id 
           });
-          
-          // Clear input and guest info if needed
-          localStorage.removeItem(STORAGE_INPUT_KEY);
-          
-          if (!userFromAuth) {
-            localStorage.removeItem(STORAGE_USER_KEY);
-            console.log('Cleared guest user information');
-          }
-          
-          console.log('localStorage cleanup completed');
-        } catch (error) {
-          console.warn('localStorage cleanup error (non-critical):', error);
+          console.log('Socket session end signal sent');
         }
-      }, 0);
 
-      console.log('Enhanced quit sequence completed successfully');
+        // 5. Batch state updates to prevent multiple re-renders
+        ReactDOM.unstable_batchedUpdates(() => {
+          setMessages([]);
+          setSession(null);
+          setUnreadCount(0);
+          setDefaultMessagesLoaded(false);
+          setHasUserSentMessage(false);
+          setPendingMessages(new Set());
+          setInput("");
+          setBusinessInfo(null); // Clear business info on quit
+        });
+
+        // 6. Reset guest form states if applicable
+        if (!userFromAuth) {
+          setShowGuestForm(false);
+          setGuestFormSubmitted(false);
+          setGuestFormErrors({});
+          setIsSubmittingGuest(false);
+          setGuestInfo({
+            firstName: '',
+            lastName: '',
+            email: '',
+            phone: ''
+          });
+        }
+
+        // 7. localStorage cleanup (asynchronous)
+        setTimeout(() => {
+          try {
+            const currentSessionKey = session ? (STORAGE_MESSAGES_PREFIX + (session.id || session._id)) : null;
+            
+            if (currentSessionKey) {
+              localStorage.removeItem(currentSessionKey);
+              console.log(`Cleared current session: ${currentSessionKey}`);
+            }
+            
+            // Clean up all chat-related storage
+            const keysToRemove = [];
+            for (let i = 0; i < localStorage.length; i++) {
+              const key = localStorage.key(i);
+              if (key && key.startsWith(STORAGE_MESSAGES_PREFIX)) {
+                keysToRemove.push(key);
+              }
+            }
+            
+            keysToRemove.forEach(key => {
+              localStorage.removeItem(key);
+              console.log(`Cleaned up: ${key}`);
+            });
+            
+            // Clear input and guest info if needed
+            localStorage.removeItem(STORAGE_INPUT_KEY);
+            
+            if (!userFromAuth) {
+              localStorage.removeItem(STORAGE_USER_KEY);
+              console.log('Cleared guest user information');
+            }
+            
+            console.log('localStorage cleanup completed');
+          } catch (error) {
+            console.warn('localStorage cleanup error (non-critical):', error);
+          }
+        }, 0);
+
+        console.log('Enhanced quit sequence completed successfully');
+        
+        // 8. Reset isQuitting after cleanup is complete
+        setIsQuitting(false);
+      }, 0);
       
-      // 7. Reset isQuitting after cleanup is complete
+    } catch (error) {
+      console.error('Error during quit sequence:', error);
       setIsQuitting(false);
-    }, 0);
-    
-  } catch (error) {
-    console.error('Error during quit sequence:', error);
-    setIsQuitting(false);
-  }
-}, [session, userFromAuth, socket]);
+    }
+  }, [session, userFromAuth, socket]);
 
   // Reset chat to completely initial state
   const resetChatToInitialState = useCallback(() => {
     if (isQuitting) return; // Prevent conflicts
     
     console.log('Resetting chat to initial state...');
+    
+    // Clear business hours interval
+    if (businessHoursIntervalRef.current) {
+      clearInterval(businessHoursIntervalRef.current);
+      businessHoursIntervalRef.current = null;
+    }
     
     // Batch all state updates
     const resetState = () => {
@@ -302,8 +332,93 @@ const ChatBotIcon = () => {
       if (quitTimeoutRef.current) {
         clearTimeout(quitTimeoutRef.current);
       }
+      if (businessHoursIntervalRef.current) {
+        clearInterval(businessHoursIntervalRef.current);
+        businessHoursIntervalRef.current = null;
+      }
     };
   }, []);
+
+  // FIXED: Real-time business hours checking with proper error handling and logging
+  useEffect(() => {
+    // Clear any existing interval
+    if (businessHoursIntervalRef.current) {
+      clearInterval(businessHoursIntervalRef.current);
+      businessHoursIntervalRef.current = null;
+    }
+
+    // Only set up interval if chat is open and not quitting
+    if (isOpen && !isQuitting) {
+      console.log('Setting up business hours real-time monitoring...');
+      
+      // Initial fetch with proper error handling
+      const initialFetch = async () => {
+        try {
+          const biz = await fetchBusinessHours();
+          if (biz) {
+            console.log('Initial business hours status:', {
+              isOpen: biz.isOpen,
+              timezone: biz.timezone || 'America/Toronto',
+              currentTime: biz.currentTime
+            });
+            setBusinessInfo(biz);
+          } else {
+            console.warn('Initial business hours fetch returned null, using fallback');
+            setBusinessInfo({
+              isOpen: false,
+              timezone: 'America/Toronto',
+              currentTime: new Date().toISOString(),
+              message: 'Business hours temporarily unavailable'
+            });
+          }
+        } catch (error) {
+          console.error('Initial business hours fetch error:', error);
+          setBusinessInfo({
+            isOpen: false,
+            timezone: 'America/Toronto', 
+            currentTime: new Date().toISOString(),
+            message: 'Business hours temporarily unavailable'
+          });
+        }
+      };
+      
+      initialFetch();
+      
+      // Set up interval to check every 30 seconds (more frequent for real-time updates)
+      businessHoursIntervalRef.current = setInterval(async () => {
+        if (isQuitting) {
+          console.log('Skipping business hours check - quitting in progress');
+          return;
+        }
+        
+        try {
+          console.log('Checking business hours status...');
+          const biz = await fetchBusinessHours();
+          if (biz) {
+            setBusinessInfo(prevInfo => {
+              // Log status changes
+              if (prevInfo && prevInfo.isOpen !== biz.isOpen) {
+                console.log(`Business hours status changed: ${prevInfo.isOpen ? 'OPEN' : 'CLOSED'} -> ${biz.isOpen ? 'OPEN' : 'CLOSED'}`);
+              }
+              return biz;
+            });
+          }
+        } catch (error) {
+          console.error('Business hours interval check error:', error);
+        }
+      }, 30000); // Check every 30 seconds
+      
+      console.log('Business hours monitoring interval started');
+    }
+
+    return () => {
+      if (businessHoursIntervalRef.current) {
+        clearInterval(businessHoursIntervalRef.current);
+        businessHoursIntervalRef.current = null;
+        console.log('Business hours monitoring interval cleared');
+      }
+    };
+  }, [isOpen, isQuitting]);
 
   useEffect(() => {
     const handleEscKey = (e) => {
@@ -574,7 +689,7 @@ const ChatBotIcon = () => {
     }
 
     let sessionData;
-    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const timezone = 'America/Toronto'; // Force Toronto timezone
 
     if (userFromAuth) {
       console.log('Creating session for authenticated user:', userFromAuth.email);
@@ -749,7 +864,7 @@ const ChatBotIcon = () => {
 
         // Trigger the welcome message with quick replies
         const biz = await fetchBusinessHours();
-        setBusinessInfo(biz);
+        if (biz) setBusinessInfo(biz);
 
         const welcomeMessage = {
           id: `welcome-${Date.now()}`,
@@ -801,165 +916,165 @@ const ChatBotIcon = () => {
   }, [guestInfo, validateGuestForm, socket, session, messages, createSession, isQuitting]);
 
   const sendMessage = useCallback(() => {
-  if (!input.trim() || isQuitting) return;
+    if (!input.trim() || isQuitting) return;
 
-  const text = input.trim();
-  const messageId = `local_${Date.now()}_${Math.random()}`;
+    const text = input.trim();
+    const messageId = `local_${Date.now()}_${Math.random()}`;
 
-  // Enhanced live agent request detection
-  const isLiveAgentRequest = 
-    text.toLowerCase().includes('talk to agent') ||
-    text.toLowerCase().includes('live agent') ||
-    text.toLowerCase().includes('speak to someone') ||
-    text.toLowerCase().includes('human support') ||
-    text.toLowerCase().includes('connect me to agent') ||
-    text.toLowerCase().includes('real person') ||
-    /\b(agent|human|person|representative|support staff)\b/i.test(text);
-
-  setPendingMessages(prev => new Set([...prev, messageId]));
-
-  setInput("");
-  try {
-    localStorage.removeItem(STORAGE_INPUT_KEY);
-  } catch (error) {
-    console.warn("Failed to clear input from localStorage:", error);
-  }
-
-  const userMessage = {
-    id: messageId,
-    from: "user",
-    text,
-    timestamp: Date.now(),
-    avatar: userFromAuth
-      ? getProfileImageSrc(userFromAuth?.photo)
-      : defaultAvatar,
-    metadata: { isLiveAgentRequest }
-  };
-
-  setMessages(prev => [...prev, userMessage]);
-  setHasUserSentMessage(true);
-
-  if (!userFromAuth && !guestFormSubmitted) {
-    console.log('Guest user sent message requesting agent, triggering form...');
-    setShowGuestForm(true);
-    return;
-  }
-
-  if (socket && socket.connected && session) {
-    socket.emit("message:send", {
-      sessionId: session?._id || session?.id,
-      message: text,
-      messageType: isLiveAgentRequest ? "live_agent_request" : "text",
-      metadata: {
-        isLiveAgentRequest, // Critical flag for backend processing
-        requestType: isLiveAgentRequest ? 'agent_connection' : 'standard_message',
-        timestamp: Date.now()
-      }
-    });
-
-    // Show connecting message for live agent requests
-    if (isLiveAgentRequest) {
-      setTimeout(() => {
-        const connectingMessage = {
-          id: `connecting_${Date.now()}`,
-          from: "bot",
-          text: "🔄 I understand you'd like to speak with a live agent. Let me connect you with someone who can help...",
-          timestamp: Date.now(),
-          avatar: FavIconLogo,
-          metadata: { requestType: 'agent_connection', isTemporary: true }
-        };
-        setMessages(prev => [...prev, connectingMessage]);
-      }, 500);
-    }
-  } else {
-    setPendingMessages(prev => {
-      const newPending = new Set(prev);
-      newPending.delete(messageId);
-      return newPending;
-    });
-  }
-}, [input, session, socket, userFromAuth, guestFormSubmitted, isQuitting]);
-
-  const handleQuickReply = useCallback(
-  (option) => {
-    if (isQuitting) return;
-    
-    const value = option.value || option.text || option;
-    const text = option.text || value;
-    const messageId = `local_qr_${Date.now()}_${Math.random()}`;
-
-    // Special handling for job search - existing functionality
-    if (value === "search_job") {
-      navigate("/Search-Jobs");
-      return;
-    }
-
-    // NEW: Enhanced live agent detection
+    // Enhanced live agent request detection
     const isLiveAgentRequest = 
-      value === "live_agent" || 
-      value === "talk_to_agent" ||
       text.toLowerCase().includes('talk to agent') ||
       text.toLowerCase().includes('live agent') ||
+      text.toLowerCase().includes('speak to someone') ||
       text.toLowerCase().includes('human support') ||
-      text.toLowerCase().includes('speak to someone');
+      text.toLowerCase().includes('connect me to agent') ||
+      text.toLowerCase().includes('real person') ||
+      /\b(agent|human|person|representative|support staff)\b/i.test(text);
 
     setPendingMessages(prev => new Set([...prev, messageId]));
 
+    setInput("");
+    try {
+      localStorage.removeItem(STORAGE_INPUT_KEY);
+    } catch (error) {
+      console.warn("Failed to clear input from localStorage:", error);
+    }
+
+    const userMessage = {
+      id: messageId,
+      from: "user",
+      text,
+      timestamp: Date.now(),
+      avatar: userFromAuth
+        ? getProfileImageSrc(userFromAuth?.photo)
+        : defaultAvatar,
+      metadata: { isLiveAgentRequest }
+    };
+
+    setMessages(prev => [...prev, userMessage]);
+    setHasUserSentMessage(true);
+
+    if (!userFromAuth && !guestFormSubmitted) {
+      console.log('Guest user sent message requesting agent, triggering form...');
+      setShowGuestForm(true);
+      return;
+    }
+
     if (socket && socket.connected && session) {
-      // NEW: Include live agent flag in message metadata
       socket.emit("message:send", {
-        sessionId: session._id || session.id,
+        sessionId: session?._id || session?.id,
         message: text,
-        messageType: isLiveAgentRequest ? "live_agent_request" : "option_selection",
+        messageType: isLiveAgentRequest ? "live_agent_request" : "text",
         metadata: {
           isLiveAgentRequest, // Critical flag for backend processing
-          requestType: isLiveAgentRequest ? 'agent_connection' : 'standard_option',
-          userSelection: value,
+          requestType: isLiveAgentRequest ? 'agent_connection' : 'standard_message',
           timestamp: Date.now()
         }
       });
 
-      // NEW: Show visual feedback for live agent requests
+      // Show connecting message for live agent requests
       if (isLiveAgentRequest) {
-        // Add a temporary system message to show we're processing the request
-        const tempMessage = {
-          id: `temp_agent_req_${Date.now()}`,
-          from: "bot",
-          text: "🔄 Connecting you with a live agent. Please wait while we find an available representative...",
-          timestamp: Date.now(),
-          avatar: FavIconLogo,
-          metadata: { isTemporary: true, requestType: 'agent_connection' }
-        };
-        setMessages(prev => [...prev, tempMessage]);
+        setTimeout(() => {
+          const connectingMessage = {
+            id: `connecting_${Date.now()}`,
+            from: "bot",
+            text: "🔄 I understand you'd like to speak with a live agent. Let me connect you with someone who can help...",
+            timestamp: Date.now(),
+            avatar: FavIconLogo,
+            metadata: { requestType: 'agent_connection', isTemporary: true }
+          };
+          setMessages(prev => [...prev, connectingMessage]);
+        }, 500);
       }
     } else {
-      // Fallback for disconnected state
-      const userMessage = {
-        id: messageId,
-        from: "user",
-        text,
-        timestamp: Date.now(),
-        avatar: userFromAuth
-          ? getProfileImageSrc(userFromAuth?.photo)
-          : defaultAvatar,
-        metadata: { isLiveAgentRequest }
-      };
-      setMessages(prev => [...prev, userMessage]);
-      setHasUserSentMessage(true);
+      setPendingMessages(prev => {
+        const newPending = new Set(prev);
+        newPending.delete(messageId);
+        return newPending;
+      });
+    }
+  }, [input, session, socket, userFromAuth, guestFormSubmitted, isQuitting]);
 
-      if (!userFromAuth && !guestFormSubmitted) {
-        console.log('Guest user requested agent, triggering form...');
-        setShowGuestForm(true);
+  const handleQuickReply = useCallback(
+    (option) => {
+      if (isQuitting) return;
+      
+      const value = option.value || option.text || option;
+      const text = option.text || value;
+      const messageId = `local_qr_${Date.now()}_${Math.random()}`;
+
+      // Special handling for job search - existing functionality
+      if (value === "search_job") {
+        navigate("/Search-Jobs");
         return;
       }
-    }
 
-    setPendingMessages(prev => {
-      const newPending = new Set(prev);
-      newPending.delete(messageId);
-      return newPending;
-    });
-  }, [session, socket, userFromAuth, guestFormSubmitted, navigate, isQuitting]);
+      // Enhanced live agent detection
+      const isLiveAgentRequest = 
+        value === "live_agent" || 
+        value === "talk_to_agent" ||
+        text.toLowerCase().includes('talk to agent') ||
+        text.toLowerCase().includes('live agent') ||
+        text.toLowerCase().includes('human support') ||
+        text.toLowerCase().includes('speak to someone');
+
+      setPendingMessages(prev => new Set([...prev, messageId]));
+
+      if (socket && socket.connected && session) {
+        // Include live agent flag in message metadata
+        socket.emit("message:send", {
+          sessionId: session._id || session.id,
+          message: text,
+          messageType: isLiveAgentRequest ? "live_agent_request" : "option_selection",
+          metadata: {
+            isLiveAgentRequest, // Critical flag for backend processing
+            requestType: isLiveAgentRequest ? 'agent_connection' : 'standard_option',
+            userSelection: value,
+            timestamp: Date.now()
+          }
+        });
+
+        // Show visual feedback for live agent requests
+        if (isLiveAgentRequest) {
+          // Add a temporary system message to show we're processing the request
+          const tempMessage = {
+            id: `temp_agent_req_${Date.now()}`,
+            from: "bot",
+            text: "🔄 Connecting you with a live agent. Please wait while we find an available representative...",
+            timestamp: Date.now(),
+            avatar: FavIconLogo,
+            metadata: { isTemporary: true, requestType: 'agent_connection' }
+          };
+          setMessages(prev => [...prev, tempMessage]);
+        }
+      } else {
+        // Fallback for disconnected state
+        const userMessage = {
+          id: messageId,
+          from: "user",
+          text,
+          timestamp: Date.now(),
+          avatar: userFromAuth
+            ? getProfileImageSrc(userFromAuth?.photo)
+            : defaultAvatar,
+          metadata: { isLiveAgentRequest }
+        };
+        setMessages(prev => [...prev, userMessage]);
+        setHasUserSentMessage(true);
+
+        if (!userFromAuth && !guestFormSubmitted) {
+          console.log('Guest user requested agent, triggering form...');
+          setShowGuestForm(true);
+          return;
+        }
+      }
+
+      setPendingMessages(prev => {
+        const newPending = new Set(prev);
+        newPending.delete(messageId);
+        return newPending;
+      });
+    }, [session, socket, userFromAuth, guestFormSubmitted, navigate, isQuitting]);
 
   const renderMessage = (m, index) => {
     const isUser = m.from === "user";
@@ -1028,7 +1143,14 @@ const ChatBotIcon = () => {
       setDefaultMessagesLoaded(true);
 
       const biz = await fetchBusinessHours();
-      setBusinessInfo(biz);
+      if (biz) {
+        console.log('Business hours for welcome message:', {
+          isOpen: biz.isOpen,
+          timezone: biz.timezone,
+          outsideHoursMessage: biz.outsideHoursMessage
+        });
+        setBusinessInfo(biz);
+      }
 
       const welcomeMessage = {
         id: `welcome-${Date.now()}`,
@@ -1153,6 +1275,28 @@ const ChatBotIcon = () => {
     </div>
   );
 
+  // FIXED: Proper business hours status display logic
+  const getBusinessHoursDisplayText = () => {
+    if (isQuitting) return "Ending session...";
+    
+    if (businessInfo) {
+      console.log('Business info for display:', {
+        isOpen: businessInfo.isOpen,
+        timezone: businessInfo.timezone,
+        currentTime: businessInfo.currentTime
+      });
+      
+      if (businessInfo.isOpen) {
+        return "We're online now";
+      } else {
+        return "Outside business hours";
+      }
+    }
+    
+    // Fallback while loading
+    return isConnected ? "Checking availability..." : "Connecting...";
+  };
+
   const inputEnabled = !isQuitting;
   
   return (
@@ -1199,16 +1343,7 @@ const ChatBotIcon = () => {
                   }
                 </div>
                 <div className="chat-sub">
-                  {isQuitting 
-                    ? "Ending session..."
-                    : businessInfo
-                      ? businessInfo.isOpen
-                        ? "We're online now"
-                        : "Outside business hours"
-                      : isConnected
-                        ? "Connected"
-                        : "Connecting..."
-                  }
+                  {getBusinessHoursDisplayText()}
                 </div>
               </div>
             </div>
@@ -1223,7 +1358,7 @@ const ChatBotIcon = () => {
                   title="End Chat Session"
                   disabled={isQuitting}
                 >
-                  <i className={`fas ${isQuitting ? 'fa-spinner fa-spin' : 'fa-sign-out-alt'}`}></i>
+                  <i className={`fas ${isQuitting ? 'fa-spinner fa-spin' : 'fa-times'}`}></i>
                 </button>
               )}
             </div>

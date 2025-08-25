@@ -298,6 +298,8 @@ app.use("/api/v1/offices", require("./routes/officeRoutes"));
 app.use("/api/v1/businessHours", require("./routes/businessHoursRoutes"));
 app.use("/api/v1/guestUsers", require("./routes/guestUserRoutes"));
 
+app.use('/api/v1/adminChatRoutes/admin/chat', require("./routes/adminChatRoutes"));
+
 // NOW serve frontend static files AFTER API routes are defined
 app.use(express.static(staticPaths.frontend));
 logWithIcon.success(

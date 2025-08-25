@@ -1,3 +1,4 @@
+//frontend/src/routes/AdminRoute.jsx
 import React, { useState, useEffect } from 'react';
 import { Navigate, Outlet } from "react-router-dom";
 import { useAuth } from "../Context/AuthContext";
@@ -6,7 +7,7 @@ import Spinner from "../ui/Spinner/Spinner";
 
 export const AdminRoute = () => {
     const [ok, setOk] = useState(null);
-    const [auth, , isInitialized] = useAuth();
+    const [auth, isInitialized] = useAuth();
 
     useEffect(() => {
         const authCheck = async () => {

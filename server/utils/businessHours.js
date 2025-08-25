@@ -62,13 +62,28 @@ class BusinessHoursUtil {
     }
 
     /**
+     * Get current time in specified timezone
+     */
+    getCurrentTime(timezone = 'America/New_York') {
+        try {
+            return moment().tz(timezone).format('YYYY-MM-DD HH:mm:ss z');
+        } catch (error) {
+            console.error('Error getting current time:', error);
+            return moment().format('YYYY-MM-DD HH:mm:ss z');
+        }
+    }
+
+    /**
      * Check if current time is within business hours
      */
-    async isWithinBusinessHours() {
+    async isWithinBusinessHours(timezone = null) {
         try {
             const businessHours = await this.getCachedBusinessHours();
             if (!businessHours) return false;
-            return businessHours.isCurrentlyOpen();
+            
+            // Use provided timezone or fall back to configured timezone
+            const effectiveTimezone = timezone || businessHours.timezone;
+            return businessHours.isCurrentlyOpen(effectiveTimezone);
         } catch (error) {
             console.error('Error checking business hours:', error);
             return false;
@@ -78,11 +93,13 @@ class BusinessHoursUtil {
     /**
      * Get next business hour
      */
-    async getNextBusinessHour() {
+    async getNextBusinessHour(timezone = null) {
         try {
             const businessHours = await this.getCachedBusinessHours();
             if (!businessHours) return 'Unknown - Please contact support';
-            return businessHours.getNextAvailableTime();
+            
+            const effectiveTimezone = timezone || businessHours.timezone;
+            return businessHours.getNextAvailableTime(effectiveTimezone);
         } catch (error) {
             console.error('Error getting next business hour:', error);
             return 'Unknown - Please contact support';
@@ -92,11 +109,13 @@ class BusinessHoursUtil {
     /**
      * Check if we're near closing time
      */
-    async isNearClosing() {
+    async isNearClosing(timezone = null) {
         try {
             const businessHours = await this.getCachedBusinessHours();
             if (!businessHours) return false;
-            return businessHours.isNearClosing();
+            
+            const effectiveTimezone = timezone || businessHours.timezone;
+            return businessHours.isNearClosing(effectiveTimezone);
         } catch (error) {
             console.error('Error checking near closing:', error);
             return false;
@@ -106,11 +125,13 @@ class BusinessHoursUtil {
     /**
      * Check if new chats are allowed
      */
-    async allowNewChats() {
+    async allowNewChats(timezone = null) {
         try {
             const businessHours = await this.getCachedBusinessHours();
-            if (!businessHours) return true; // Default to allow if no config
-            return businessHours.allowNewChats();
+            if (!businessHours) return true;
+            
+            const effectiveTimezone = timezone || businessHours.timezone;
+            return businessHours.allowNewChats(effectiveTimezone);
         } catch (error) {
             console.error('Error checking allow new chats:', error);
             return true;
@@ -126,41 +147,42 @@ class BusinessHoursUtil {
             const businessHours = await this.getCachedBusinessHoursLean();
             if (!businessHours) return 0;
 
-            // Check if currently open using lean document logic
-            const now = moment().tz(businessHours.timezone);
+            // FIX: Get timezone from businessHours document
+            const timezone = businessHours.timezone;
+            const now = moment().tz(timezone);
             const currentTime = now.format('HH:mm');
             const currentDay = now.format('dddd').toLowerCase();
             const currentDate = now.format('YYYY-MM-DD');
 
             // Check if it's a holiday
             const isHoliday = businessHours.holidays.some(holiday => {
-                if (holiday.recurring) {
-                    const holidayDate = moment(holiday.date);
-                    return now.format('MM-DD') === holidayDate.format('MM-DD');
-                }
-                return moment(holiday.date).format('YYYY-MM-DD') === currentDate;
+            if (holiday.recurring) {
+                const holidayDate = moment(holiday.date);
+                return now.format('MM-DD') === holidayDate.format('MM-DD');
+            }
+            return moment(holiday.date).format('YYYY-MM-DD') === currentDate;
             });
 
             if (isHoliday) return 0;
 
             // Check for special hours
             const specialHour = businessHours.specialHours.find(sh =>
-                moment(sh.date).format('YYYY-MM-DD') === currentDate
+            moment(sh.date).format('YYYY-MM-DD') === currentDate
             );
 
             let endHour, endMinute;
             if (specialHour && !specialHour.isClosed && specialHour.hours && specialHour.hours.end) {
-                [endHour, endMinute] = specialHour.hours.end.split(':');
+            [endHour, endMinute] = specialHour.hours.end.split(':');
             } else if (businessHours.workingDays.includes(currentDay)) {
-                [endHour, endMinute] = businessHours.workingHours.end.split(':');
+            [endHour, endMinute] = businessHours.workingHours.end.split(':');
             } else {
-                return 0; // Not a working day
+            return 0; // Not a working day
             }
 
             // Check if currently within hours
             const isWithinHours = specialHour ?
-                (currentTime >= specialHour.hours.start && currentTime <= specialHour.hours.end) :
-                (currentTime >= businessHours.workingHours.start && currentTime <= businessHours.workingHours.end);
+            (currentTime >= specialHour.hours.start && currentTime <= specialHour.hours.end) :
+            (currentTime >= businessHours.workingHours.start && currentTime <= businessHours.workingHours.end);
 
             if (!isWithinHours) return 0;
 
