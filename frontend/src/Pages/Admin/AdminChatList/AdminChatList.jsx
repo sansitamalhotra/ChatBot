@@ -1,11 +1,13 @@
-//frontend/src/Pages/AdminChatList/AdminChatList.jsx
+//frontend/src/Pages/Admin/AdminChatList/AdminChatList.jsx
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { useAuth } from "../../../Context/AuthContext";
-import { useSocket } from "../../../Context/SocketContext";
-import API from "../../../helpers/API";
+import { useNavigate } from 'react-router-dom'; // Add this import
+import { useAuth } from "../../../Context/AuthContext"; // Fixed path
+import { useSocket } from "../../../Context/SocketContext"; // Fixed path
+import API from "../../../helpers/API"; // Fixed path
 import './AdminLiveChat.css';
 
 const AdminChatList = () => {
+  const navigate = useNavigate(); // Add navigation hook
   const { socket, isConnected } = useSocket();
   const [auth] = useAuth();
   const adminUser = auth?.user;
@@ -67,22 +69,37 @@ const AdminChatList = () => {
       }
     } catch (err) {
       console.error('Error loading sessions:', err);
-      setError(err.response?.data?.message || 'Failed to load chat sessions');
+      if (err.response?.status === 404) {
+        setError('Chat feature not available. Please contact administrator.');
+      } else if (err.response?.status === 401) {
+        setError('Authentication failed. Please login again.');
+        // Redirect to admin dashboard
+        navigate('/Admin/Dashboard');
+      } else {
+        setError(err.response?.data?.message || 'Failed to load chat sessions');
+      }
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [navigate]);
+
+  // Admin permission check and initial load
+  useEffect(() => {
+    if (!adminUser || (adminUser.role !== 1 && adminUser.role !== 0)) {
+      navigate('/Admin/Dashboard');
+      return;
+    }
+    loadSessions();
+  }, [adminUser, loadSessions, navigate]);
 
   // Filter and search sessions
   useEffect(() => {
     let filtered = sessions;
 
-    // Apply status filter
     if (filter !== 'all') {
       filtered = filtered.filter(session => session.status === filter);
     }
 
-    // Apply search filter
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase();
       filtered = filtered.filter(session => 
@@ -143,11 +160,6 @@ const AdminChatList = () => {
     };
   }, [socket]);
 
-  // Load sessions on mount
-  useEffect(() => {
-    loadSessions();
-  }, [loadSessions]);
-
   // Handle session assignment
   const assignSession = useCallback(async (sessionId) => {
     try {
@@ -156,7 +168,6 @@ const AdminChatList = () => {
       });
 
       if (response.data.success) {
-        // Update session status locally
         setSessions(prev => 
           prev.map(session => 
             session._id === sessionId 
@@ -164,27 +175,45 @@ const AdminChatList = () => {
               : session
           )
         );
-
-        // Navigate to chat session
-        window.open(`/admin/chat/session/${sessionId}`, '_blank');
+        // Use navigate instead of window.open for better routing
+        navigate(`/admin/chat/session/${sessionId}`);
       }
     } catch (error) {
       console.error('Error assigning session:', error);
       setError('Failed to assign session');
     }
-  }, [adminUser]);
+  }, [adminUser, navigate]);
 
-  // Get status badge color
-  const getStatusColor = useCallback((status) => {
+  // Handle navigation to chat session
+  const navigateToChat = useCallback((sessionId) => {
+    navigate(`/admin/chat/session/${sessionId}`);
+  }, [navigate]);
+
+  // Get status badge class
+  const getStatusClass = useCallback((status) => {
     switch (status) {
       case 'active':
-        return '#4caf50';
+        return 'status-active';
       case 'waiting':
-        return '#ff9800';
+        return 'status-waiting';
       case 'ended':
-        return '#9e9e9e';
+        return 'status-ended';
       default:
-        return '#6c757d';
+        return 'status-default';
+    }
+  }, []);
+
+  // Get status indicator class
+  const getIndicatorClass = useCallback((status) => {
+    switch (status) {
+      case 'active':
+        return 'indicator-active';
+      case 'waiting':
+        return 'indicator-waiting';
+      case 'ended':
+        return 'indicator-ended';
+      default:
+        return 'indicator-default';
     }
   }, []);
 
@@ -198,108 +227,63 @@ const AdminChatList = () => {
 
   if (isLoading) {
     return (
-      <div style={{ 
-        display: 'flex', 
-        flexDirection: 'column', 
-        alignItems: 'center', 
-        justifyContent: 'center', 
-        height: '100vh',
-        fontFamily: 'system-ui, -apple-system, sans-serif'
-      }}>
-        <div style={{ 
-          width: '40px', 
-          height: '40px', 
-          border: '4px solid #f3f3f3', 
-          borderTop: '4px solid #007bff', 
-          borderRadius: '50%',
-          animation: 'spin 1s linear infinite',
-          marginBottom: '20px'
-        }}></div>
-        <p style={{ color: '#666', fontSize: '16px' }}>Loading chat sessions...</p>
+      <div className="loading-container">
+        <div className="loading-spinner"></div>
+        <p className="loading-text">Loading chat sessions...</p>
       </div>
     );
   }
 
   return (
-    <div style={{
-      minHeight: '100vh',
-      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-      fontFamily: 'system-ui, -apple-system, sans-serif'
-    }}>
+    <div className="admin-chat-list-container">
       {/* Header */}
-      <div style={{
-        background: 'rgba(255, 255, 255, 0.95)',
-        backdropFilter: 'blur(20px)',
-        padding: '24px',
-        boxShadow: '0 4px 20px rgba(0, 0, 0, 0.1)'
-      }}>
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          marginBottom: '24px'
-        }}>
-          <h1 style={{
-            margin: 0,
-            fontSize: '28px',
-            fontWeight: '700',
-            color: '#2d3748',
-            background: 'linear-gradient(135deg, #667eea, #764ba2)',
-            backgroundClip: 'text',
-            WebkitBackgroundClip: 'text',
-            WebkitTextFillColor: 'transparent'
-          }}>
+      <div className="header-container">
+        <div className="header-top">
+          <h1 className="header-title">
             Live Chat Management
           </h1>
           
-          <button
-            onClick={loadSessions}
-            style={{
-              padding: '12px 20px',
-              background: 'linear-gradient(135deg, #667eea, #764ba2)',
-              color: 'white',
-              border: 'none',
-              borderRadius: '12px',
-              cursor: 'pointer',
-              fontSize: '14px',
-              fontWeight: '500',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              transition: 'all 0.3s ease'
-            }}
-          >
-            🔄 Refresh
+          <button onClick={loadSessions} className="refresh-button">
+            <i className="fas fa-sync-alt"></i> Refresh
           </button>
         </div>
 
         {/* Stats Cards */}
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-          gap: '16px',
-          marginBottom: '24px'
-        }}>
+        <div className="stats-grid">
           {[
-            { label: 'Total Sessions', value: stats.totalSessions, color: '#667eea', icon: '💬' },
-            { label: 'Active Chats', value: stats.activeSessions, color: '#4caf50', icon: '🟢' },
-            { label: 'Waiting for Agent', value: stats.waitingSessions, color: '#ff9800', icon: '⏳' },
-            { label: 'Connection Status', value: isConnected ? 'Online' : 'Offline', color: isConnected ? '#4caf50' : '#f44336', icon: isConnected ? '📶' : '📵' }
+            { 
+              label: 'Total Sessions', 
+              value: stats.totalSessions, 
+              colorClass: 'stats-total', 
+              icon: 'fas fa-comments' 
+            },
+            { 
+              label: 'Active Chats', 
+              value: stats.activeSessions, 
+              colorClass: 'stats-active', 
+              icon: 'fas fa-circle' 
+            },
+            { 
+              label: 'Waiting for Agent', 
+              value: stats.waitingSessions, 
+              colorClass: 'stats-waiting', 
+              icon: 'fas fa-clock' 
+            },
+            { 
+              label: 'Connection Status', 
+              value: isConnected ? 'Online' : 'Offline', 
+              colorClass: isConnected ? 'stats-online' : 'stats-offline', 
+              icon: isConnected ? 'fas fa-wifi' : 'fas fa-wifi-slash' 
+            }
           ].map((stat, index) => (
-            <div key={index} style={{
-              background: 'rgba(255, 255, 255, 0.7)',
-              backdropFilter: 'blur(10px)',
-              padding: '20px',
-              borderRadius: '16px',
-              textAlign: 'center',
-              boxShadow: '0 4px 15px rgba(0, 0, 0, 0.1)',
-              border: '1px solid rgba(255, 255, 255, 0.3)'
-            }}>
-              <div style={{ fontSize: '24px', marginBottom: '8px' }}>{stat.icon}</div>
-              <div style={{ fontSize: '24px', fontWeight: '700', color: stat.color, marginBottom: '4px' }}>
+            <div key={index} className="stats-card">
+              <div className={`stats-icon ${stat.colorClass}`}>
+                <i className={stat.icon}></i>
+              </div>
+              <div className={`stats-value ${stat.colorClass}`}>
                 {stat.value}
               </div>
-              <div style={{ fontSize: '14px', color: '#718096', fontWeight: '500' }}>
+              <div className="stats-label">
                 {stat.label}
               </div>
             </div>
@@ -307,37 +291,13 @@ const AdminChatList = () => {
         </div>
 
         {/* Filters and Search */}
-        <div style={{
-          display: 'flex',
-          gap: '16px',
-          alignItems: 'center',
-          flexWrap: 'wrap'
-        }}>
-          <div style={{
-            display: 'flex',
-            gap: '8px',
-            background: 'rgba(255, 255, 255, 0.7)',
-            padding: '6px',
-            borderRadius: '12px',
-            backdropFilter: 'blur(10px)'
-          }}>
+        <div className="filters-container">
+          <div className="filter-buttons">
             {filterOptions.map((option) => (
               <button
                 key={option.value}
                 onClick={() => setFilter(option.value)}
-                style={{
-                  padding: '8px 16px',
-                  border: 'none',
-                  borderRadius: '8px',
-                  cursor: 'pointer',
-                  fontSize: '14px',
-                  fontWeight: '500',
-                  transition: 'all 0.2s ease',
-                  background: filter === option.value 
-                    ? 'linear-gradient(135deg, #667eea, #764ba2)' 
-                    : 'transparent',
-                  color: filter === option.value ? 'white' : '#4a5568'
-                }}
+                className={`filter-button ${filter === option.value ? 'active' : ''}`}
               >
                 {option.label} ({option.count})
               </button>
@@ -349,194 +309,80 @@ const AdminChatList = () => {
             placeholder="Search sessions..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            style={{
-              flex: 1,
-              minWidth: '200px',
-              padding: '12px 16px',
-              border: '2px solid rgba(255, 255, 255, 0.3)',
-              borderRadius: '12px',
-              fontSize: '14px',
-              background: 'rgba(255, 255, 255, 0.7)',
-              backdropFilter: 'blur(10px)',
-              outline: 'none',
-              transition: 'all 0.3s ease'
-            }}
-            onFocus={(e) => e.target.style.borderColor = '#667eea'}
-            onBlur={(e) => e.target.style.borderColor = 'rgba(255, 255, 255, 0.3)'}
+            className="search-input"
           />
         </div>
       </div>
 
       {/* Sessions List */}
-      <div style={{ padding: '24px' }}>
+      <div className="sessions-content">
         {error && (
-          <div style={{
-            background: 'rgba(239, 68, 68, 0.1)',
-            border: '1px solid rgba(239, 68, 68, 0.3)',
-            borderRadius: '12px',
-            padding: '16px',
-            marginBottom: '24px',
-            color: '#dc2626',
-            textAlign: 'center'
-          }}>
-            ⚠️ {error}
+          <div className="error-message">
+            <i className="fas fa-exclamation-triangle error-icon"></i>
+            {error}
           </div>
         )}
 
         {filteredSessions.length === 0 ? (
-          <div style={{
-            background: 'rgba(255, 255, 255, 0.7)',
-            backdropFilter: 'blur(20px)',
-            borderRadius: '16px',
-            padding: '60px 24px',
-            textAlign: 'center',
-            boxShadow: '0 8px 30px rgba(0, 0, 0, 0.1)'
-          }}>
-            <div style={{ fontSize: '48px', marginBottom: '16px' }}>💬</div>
-            <h3 style={{ color: '#4a5568', marginBottom: '8px', fontSize: '20px' }}>
+          <div className="empty-state">
+            <div className="empty-icon">
+              <i className="fas fa-comments"></i>
+            </div>
+            <h3 className="empty-title">
               No chat sessions found
             </h3>
-            <p style={{ color: '#718096', margin: 0, fontSize: '16px' }}>
+            <p className="empty-description">
               {searchQuery ? 'Try adjusting your search terms' : 'Chat sessions will appear here when users start conversations'}
             </p>
           </div>
         ) : (
-          <div style={{
-            display: 'grid',
-            gap: '16px'
-          }}>
+          <div className="sessions-grid">
             {filteredSessions.map((session) => (
               <div
                 key={session._id}
-                style={{
-                  background: 'rgba(255, 255, 255, 0.9)',
-                  backdropFilter: 'blur(20px)',
-                  borderRadius: '16px',
-                  padding: '20px',
-                  boxShadow: '0 8px 30px rgba(0, 0, 0, 0.1)',
-                  border: '1px solid rgba(255, 255, 255, 0.3)',
-                  transition: 'all 0.3s ease',
-                  cursor: 'pointer'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.transform = 'translateY(-2px)';
-                  e.currentTarget.style.boxShadow = '0 12px 40px rgba(0, 0, 0, 0.15)';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.transform = 'translateY(0)';
-                  e.currentTarget.style.boxShadow = '0 8px 30px rgba(0, 0, 0, 0.1)';
-                }}
-                onClick={() => window.open(`/admin/chat/session/${session._id}`, '_blank')}
+                className="session-card"
+                onClick={() => navigateToChat(session._id)}
               >
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'flex-start',
-                  gap: '16px'
-                }}>
-                  <div style={{ position: 'relative' }}>
+                <div className="session-content">
+                  <div className="user-avatar-container">
                     <img
                       src={getProfileImageSrc(session.userInfo?.photo, !session.userInfo?.userId)}
                       alt="User"
-                      style={{
-                        width: '56px',
-                        height: '56px',
-                        borderRadius: '50%',
-                        objectFit: 'cover',
-                        border: '3px solid rgba(255, 255, 255, 0.5)'
-                      }}
+                      className="user-avatar"
                     />
-                    <div style={{
-                      position: 'absolute',
-                      bottom: '2px',
-                      right: '2px',
-                      width: '16px',
-                      height: '16px',
-                      borderRadius: '50%',
-                      background: getStatusColor(session.status),
-                      border: '2px solid white'
-                    }} />
+                    <div className={`status-indicator ${getIndicatorClass(session.status)}`} />
                   </div>
                   
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{
-                      display: 'flex',
-                      alignItems: 'flex-start',
-                      justifyContent: 'space-between',
-                      marginBottom: '8px'
-                    }}>
-                      <div>
-                        <h3 style={{
-                          margin: 0,
-                          fontSize: '18px',
-                          fontWeight: '600',
-                          color: '#2d3748',
-                          marginBottom: '4px'
-                        }}>
+                  <div className="session-details">
+                    <div className="session-header">
+                      <div className="user-info">
+                        <h3>
                           {session.userInfo?.firstName || 'Guest User'} {session.userInfo?.lastName || ''}
                         </h3>
-                        <p style={{
-                          margin: 0,
-                          fontSize: '14px',
-                          color: '#718096'
-                        }}>
+                        <p>
                           {session.userInfo?.email || 'No email provided'}
                         </p>
                       </div>
                       
-                      <div style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '12px'
-                      }}>
+                      <div className="session-meta">
                         {session.unreadCount > 0 && (
-                          <span style={{
-                            background: '#ef4444',
-                            color: 'white',
-                            fontSize: '12px',
-                            fontWeight: '600',
-                            padding: '4px 8px',
-                            borderRadius: '12px',
-                            minWidth: '20px',
-                            textAlign: 'center'
-                          }}>
+                          <span className="unread-count">
                             {session.unreadCount}
                           </span>
                         )}
                         
-                        <span style={{
-                          background: `${getStatusColor(session.status)}20`,
-                          color: getStatusColor(session.status),
-                          fontSize: '12px',
-                          fontWeight: '600',
-                          padding: '6px 12px',
-                          borderRadius: '20px',
-                          textTransform: 'capitalize'
-                        }}>
+                        <span className={`status-badge ${getStatusClass(session.status)}`}>
                           {session.status}
                         </span>
                         
-                        <span style={{
-                          fontSize: '12px',
-                          color: '#a0aec0',
-                          fontWeight: '500'
-                        }}>
+                        <span className="timestamp">
                           {formatTime(session.lastMessage?.timestamp || session.createdAt)}
                         </span>
                       </div>
                     </div>
                     
-                    <div style={{
-                      marginBottom: '12px'
-                    }}>
-                      <p style={{
-                        margin: 0,
-                        fontSize: '14px',
-                        color: '#4a5568',
-                        lineHeight: '1.5',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap'
-                      }}>
+                    <div className="last-message">
+                      <p>
                         <strong>
                           {session.lastMessage?.senderType === 'user' ? 'User: ' : 'Agent: '}
                         </strong>
@@ -544,90 +390,41 @@ const AdminChatList = () => {
                       </p>
                     </div>
                     
-                    <div style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between'
-                    }}>
-                      <div style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '12px',
-                        fontSize: '12px',
-                        color: '#718096'
-                      }}>
-                        <span>📅 {new Date(session.createdAt).toLocaleDateString()}</span>
+                    <div className="session-footer">
+                      <div className="session-info">
+                        <span>
+                          <i className="fas fa-calendar-alt"></i>
+                          {new Date(session.createdAt).toLocaleDateString()}
+                        </span>
                         {session.agent && (
-                          <span>👤 {session.agent.firstname} {session.agent.lastname}</span>
+                          <span>
+                            <i className="fas fa-user"></i>
+                            {session.agent.firstname} {session.agent.lastname}
+                          </span>
                         )}
                       </div>
                       
-                      <div style={{
-                        display: 'flex',
-                        gap: '8px'
-                      }}>
+                      <div className="session-actions">
                         {session.status === 'waiting' && (
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
                               assignSession(session._id);
                             }}
-                            style={{
-                              padding: '8px 16px',
-                              background: 'linear-gradient(135deg, #10b981, #059669)',
-                              color: 'white',
-                              border: 'none',
-                              borderRadius: '8px',
-                              cursor: 'pointer',
-                              fontSize: '12px',
-                              fontWeight: '600',
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '4px',
-                              transition: 'all 0.2s ease'
-                            }}
-                            onMouseEnter={(e) => {
-                              e.currentTarget.style.transform = 'translateY(-1px)';
-                              e.currentTarget.style.boxShadow = '0 4px 12px rgba(16, 185, 129, 0.4)';
-                            }}
-                            onMouseLeave={(e) => {
-                              e.currentTarget.style.transform = 'translateY(0)';
-                              e.currentTarget.style.boxShadow = 'none';
-                            }}
+                            className="action-button take-session-button"
                           >
-                            ✋ Take Session
+                            <i className="fas fa-hand-paper"></i> Take Session
                           </button>
                         )}
                         
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            window.open(`/admin/chat/session/${session._id}`, '_blank');
+                            navigateToChat(session._id);
                           }}
-                          style={{
-                            padding: '8px 16px',
-                            background: 'linear-gradient(135deg, #667eea, #764ba2)',
-                            color: 'white',
-                            border: 'none',
-                            borderRadius: '8px',
-                            cursor: 'pointer',
-                            fontSize: '12px',
-                            fontWeight: '600',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '4px',
-                            transition: 'all 0.2s ease'
-                          }}
-                          onMouseEnter={(e) => {
-                            e.currentTarget.style.transform = 'translateY(-1px)';
-                            e.currentTarget.style.boxShadow = '0 4px 12px rgba(102, 126, 234, 0.4)';
-                          }}
-                          onMouseLeave={(e) => {
-                            e.currentTarget.style.transform = 'translateY(0)';
-                            e.currentTarget.style.boxShadow = 'none';
-                          }}
+                          className="action-button open-chat-button"
                         >
-                          💬 Open Chat
+                          <i className="fas fa-comments"></i> Open Chat
                         </button>
                       </div>
                     </div>
@@ -638,99 +435,6 @@ const AdminChatList = () => {
           </div>
         )}
       </div>
-
-      {/* CSS Animations */}
-      <style jsx>{`
-        @keyframes spin {
-          0% { transform: rotate(0deg); }
-          100% { transform: rotate(360deg); }
-        }
-        
-        @keyframes fadeIn {
-          from {
-            opacity: 0;
-            transform: translateY(20px);
-          }
-          to {
-            opacity: 1;
-            transform: translateY(0);
-          }
-        }
-        
-        /* Responsive Design */
-        @media (max-width: 768px) {
-          .stats-grid {
-            grid-template-columns: repeat(2, 1fr) !important;
-          }
-          
-          .filters-container {
-            flex-direction: column !important;
-            align-items: stretch !important;
-          }
-          
-          .session-card {
-            padding: 16px !important;
-          }
-          
-          .session-header {
-            flex-direction: column !important;
-            align-items: flex-start !important;
-            gap: 8px !important;
-          }
-          
-          .session-actions {
-            justify-content: flex-start !important;
-            flex-wrap: wrap !important;
-          }
-        }
-        
-        @media (max-width: 480px) {
-          .stats-grid {
-            grid-template-columns: 1fr !important;
-          }
-          
-          .user-avatar {
-            width: 48px !important;
-            height: 48px !important;
-          }
-          
-          .session-meta {
-            flex-direction: column !important;
-            align-items: flex-start !important;
-            gap: 4px !important;
-          }
-        }
-        
-        /* Scrollbar styling */
-        ::-webkit-scrollbar {
-          width: 8px;
-        }
-        
-        ::-webkit-scrollbar-track {
-          background: rgba(255, 255, 255, 0.1);
-          border-radius: 4px;
-        }
-        
-        ::-webkit-scrollbar-thumb {
-          background: rgba(255, 255, 255, 0.3);
-          border-radius: 4px;
-        }
-        
-        ::-webkit-scrollbar-thumb:hover {
-          background: rgba(255, 255, 255, 0.5);
-        }
-        
-        /* Focus indicators for accessibility */
-        button:focus {
-          outline: 2px solid #667eea;
-          outline-offset: 2px;
-        }
-        
-        input:focus {
-          outline: none;
-          box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.3);
-        }
-      `}</style>
     </div>
   );
 };

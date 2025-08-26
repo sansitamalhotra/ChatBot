@@ -240,13 +240,11 @@ function App() {
           {/* ************************************** */}
 
           {/* Admin Routes */}
-          <Route element={<AdminRoute />}>
+          <Route path="/" element={<AdminRoute />}>
             {/* ##################################################################### */}
             <Route path="/Admin/Dashboard" element={<TestAdminDashboardHome />} />
-            <Route path="/Admin/*" element={<TestAdminDashboardHome />} /> 
-            {/* <Route path="/admin/chat/session/:sessionId" element={<AdminChatSession />} /> */}
-            <Route path="/admin/chat/session/:sessionId" element={<AdminLiveChat />} />
-            <Route path="/Admin/Chat-List" element={<AdminChatList />} />
+            <Route path="admin/chat/session/:sessionId" element={<AdminLiveChat />} />
+            <Route path="Admin/Chat-List" element={<AdminChatList />} />            
             <Route path="/Admin/Add-Job" element={<AddTestJob />} />
             <Route path="/Admin/Manage-Jobs" element={<ManageTestJobs />} />
             <Route path="/Admin/Manage-Qualifications" element={<ManageAdminJobTestQualifications />} />
