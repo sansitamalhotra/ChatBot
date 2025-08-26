@@ -21,7 +21,7 @@ const { logWithIcon } = require('./consoleIcons');
 const ChatMessageController = require('../controllers/chatMessageController');
 const businessHoursAdapter = require('./businessHoursAdapter');
 const chatTemplateCache = require('./chatTemplateCache');
-const { registerAdminChatHandler } = require('./adminChatHandlers');
+const { registerAdminChatHandlers } = require('./adminChatHandlers');
 const { notifyAdminsOfPendingRequest, generateUniqueAgentUrl } = require('./adminNotificationService');
 
 const VALID_STATUSES = ['offline', 'online', 'active', 'idle', 'away'];
@@ -1513,6 +1513,12 @@ const setupSocketHandlers = (io) => {
 
     // handle incoming connection
     await handleConnection(socket, io);
+
+    // Register admin chat handlers for admin users
+    if (socket.user && socket.user.role === 1) {
+      console.log(`Registering admin chat handlers for admin: ${socket.user.firstname} ${socket.user.lastname}`);
+      registerAdminChatHandlers(io, socket);
+    }
 
     // Activity events
     socket.on('user:activity', async (data) => { await handleUserActivity(socket, io, data); });

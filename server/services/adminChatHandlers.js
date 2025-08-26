@@ -104,15 +104,18 @@ const registerAdminChatHandlers = (io, socket) => {
         senderId: adminId,
         senderName: `${admin.firstname} ${admin.lastname}`,
         messageType,
+        senderModel: 'LiveAgent',
         metadata: {
           ...metadata,
           senderAvatar: admin.photo,
           agentId: adminId
         }
       });
-
       await newMessage.save();
 
+      logWithIcon.success(`Chat Message saved: ${newMessage._id}`);
+
+      logWithIcon.info(`Updating chat session...`);
       // Update session with last message
       session.lastMessage = newMessage._id;
       session.lastMessageAt = new Date();
@@ -121,7 +124,13 @@ const registerAdminChatHandlers = (io, socket) => {
         session.agent = adminId;
         session.assignedAt = new Date();
       }
-      await session.save();
+      try{
+        await session.save();
+      }catch (error) {
+        console.error('Error updating chat session:', error);
+      }
+      
+      logWithIcon.success(`Session updated: ${sessionId}`);
 
       // Prepare message for broadcast
       const messageData = {

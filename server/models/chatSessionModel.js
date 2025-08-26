@@ -27,7 +27,7 @@ const chatSessionSchema = new Schema({
   },
   sessionType: {
     type: String,
-    enum: ['bot', 'live_agent', 'transferred'],
+    enum: ['bot', 'live_agent', 'transferred', 'pending_agent'],
     default: 'bot',
     required: true
   },
