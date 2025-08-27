@@ -22,7 +22,6 @@ const Login = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const [isOAuth, setIsOAuth] = useState(false);
-
   const notifyErr = (msg) =>
     toast.error(msg, {
       position: "top-center",
@@ -70,16 +69,19 @@ const Login = () => {
   };
 
   // Check if user is already authenticated - ONLY after auth is initialized
+  // made changes here
   useEffect(() => {
     if (isInitialized && auth?.user && auth?.token) {
       const redirectTo = getRedirectPath(auth.user.role);
-      if (redirectTo) {
-        console.log("User already authenticated, redirecting to:", redirectTo);        
-        setRedirectPath(redirectTo);
+      const from = location.state?.from?.pathname;
+      if (redirectTo || from) {
+        const destination = from || redirectTo;
+        console.log("User already authenticated, redirecting to:", destination);
+        setRedirectPath(destination, { replace: true });
       }
     }
   }, [isInitialized, auth?.user, auth?.token]);
-
+  
   // Fetch registered user details if ID is provided
   useEffect(() => {
     if (params?._id) fetchRegUserById();

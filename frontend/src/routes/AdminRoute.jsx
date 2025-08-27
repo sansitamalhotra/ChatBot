@@ -1,6 +1,6 @@
 //frontend/src/routes/AdminRoute.jsx
 import React, { useState, useEffect } from 'react';
-import { Navigate, Outlet } from "react-router-dom";
+import { Navigate, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "../Context/AuthContext";
 import API from "../helpers/API";
 import Spinner from "../ui/Spinner/Spinner";
@@ -8,6 +8,7 @@ import Spinner from "../ui/Spinner/Spinner";
 export const AdminRoute = () => {
     const [ok, setOk] = useState(null);
     const [auth, isInitialized] = useAuth();
+    const location = useLocation();
 
     useEffect(() => {
         const authCheck = async () => {
@@ -45,5 +46,5 @@ export const AdminRoute = () => {
         return <Spinner />;
     }
 
-    return ok ? <Outlet /> : <Navigate to="/Login" replace />;
+    return ok ?  (<Outlet /> ) : (<Navigate to="/Login" replace state={{ from: location }} />);
 };

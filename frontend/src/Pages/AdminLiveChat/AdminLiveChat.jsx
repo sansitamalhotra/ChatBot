@@ -116,7 +116,9 @@ const AdminLiveChat = () => {
     };
 
     const handleSessionEnd = (data) => {
+      console.log('Session ended:', data);
       if (data.sessionId === sessionId) {
+        setMessages(prev => [...prev, { _id: `end_${Date.now()}`, message: 'Session ended by the user', senderType: 'system', timestamp: new Date() }]);
         setSessionActive(false);
         setConnectionStatus('ended');
       }

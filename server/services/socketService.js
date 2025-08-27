@@ -1496,6 +1496,21 @@ const handleJoinSession = async (socket, io, { sessionId }, ack) => {
   }
 };
 
+const handleSessionEnd = async (socket, io, { sessionId }, ack) => {
+  logWithIcon.info(`Session ending: ${sessionId}`);
+  try {
+    const session = await ChatSession.findById(sessionId);
+    if (!session) return ack && ack({ error: 'Session not found' });
+
+    // Notify all participants about the session ending
+    io.to(`session:${sessionId}`).emit('session:ended', { sessionId });
+    if (ack) ack(null, { success: true });
+  } catch (err) {
+    logWithIcon.error('handleSessionEnd error:', err);
+    if (ack) ack({ error: err.message || 'Error ending session' });
+  }
+};
+
 // Setup socket handlers (single consolidated function)
 const setupSocketHandlers = (io) => {
 
@@ -1528,6 +1543,7 @@ const setupSocketHandlers = (io) => {
     socket.on('session:create', async (payload, ack) => { await handleChatSessionCreate(socket, io, payload, ack); });
     socket.on('session:join', async (payload, ack) => { await handleJoinSession(socket, io, payload, ack); });
     socket.on('message:send', async (payload, ack) => { await handleMessageSend(socket, io, payload, ack); });
+    socket.on('session:end', async (payload, ack) => { await handleSessionEnd(socket, io, payload, ack); });
 
     // Agent events
     socket.on('agent:accept', async (payload, ack) => { await handleAgentAcceptSession(socket, io, payload, ack); });
