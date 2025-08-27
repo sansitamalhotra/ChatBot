@@ -1,7 +1,6 @@
 //server/services/liveAgentEmailService.js
 const nodemailer = require('nodemailer');
 
-
 const sendLiveAgentNotification = async (message, chatLink) => {
     try {
         // Create the transporter

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Helmet } from "react-helmet";
 import TestHomeHeader from '../TestHomeHeader';
 import { Link, useNavigate } from "react-router-dom";
@@ -35,6 +35,8 @@ const TestContactUs = () => {
         });
     };
     const [loading, setLoading] = useState(false);
+    const [offices, setOffices] = useState([]);
+    const [loadingOffices, setLoadingOffices] = useState(true);
     const navigate = useNavigate();
   
     // Using react-hook-form for better validation performance
@@ -44,6 +46,33 @@ const TestContactUs = () => {
       formState: { errors },
       reset
     } = useForm();
+
+    // Fetch offices from API
+    useEffect(() => {
+        const fetchOffices = async () => {
+            try {
+                setLoadingOffices(true);
+                const response = await API.get("/api/v1/offices/fetchAllOffices");
+                if (response.data.success) {
+                    setOffices(response.data.offices);
+                }
+            } catch (error) {
+                console.error("Error fetching offices:", error);
+                notifyErr("Failed to load office locations");
+            } finally {
+                setLoadingOffices(false);
+            }
+        };
+
+        fetchOffices();
+    }, []);
+
+    // Helper function to generate Google Maps embed URL
+    const generateMapUrl = (office) => {
+        const fullAddress = `${office.location.address}, ${office.location.city}, ${office.location.state}, ${office.location.postalCode}, ${office.location.country}`;
+        const encodedAddress = encodeURIComponent(fullAddress);
+        return `https://maps.google.com/maps?width=520&height=334&hl=en&q=${encodedAddress}&t=&z=12&ie=UTF8&iwloc=B&output=embed`;
+    };
 
 const LoaderSpinner = ({ style }) => (
   <div style={{
@@ -334,131 +363,72 @@ const LoaderSpinner = ({ style }) => (
                                 </div>
                             </div>
                             <div className="locations-container">
-                                {/* Ontario Location */}
-                                <div className="location-column mt-5">
-                                    <div className="location-content">
-                                        <div className="map-container">
-                                        <div className="map-inner">
-                                            <div className="map-wrapper">
-                                                <iframe 
-                                                    className="responsive-map"
-                                                    width="420" 
-                                                    height="334" 
-                                                    frameBorder="0" 
-                                                    scrolling="no" 
-                                                    marginHeight="0" 
-                                                    marginWidth="0" 
-                                                    id="gmap_canvas" 
-                                                    src="https://maps.google.com/maps?width=520&height=334&hl=en&q=71%20Fleming%20Crescent,%20Caledonia,%20ON,%20N3W%201V3%20Caledonia+(ThinkBeyond%20Canada%20Address)&t=&z=12&ie=UTF8&iwloc=B&output=embed"
-                                                    title="Google Map"
-                                                ></iframe>
-                                                <noscript><iframe src="https://www.google.com/maps/embed/v1/place?q=Unit+3%2F10+Moore+Street%2C+++++++++Acacia+Ridge+QLD+4110&key=AIzaSyD09zQ9PNDNNy9TadMuzRV_UsPUoWKntt8" aria-hidden="true"></iframe></noscript>
-                                            </div>
-                                        </div>
-                                        </div>
-                                        <div className="red-text">
-                                        <div className="location-title-container">
-                                            <h2 className="location-title">
-                                            <span className="red-text">Ontario CA</span>
-                                            </h2>
-                                        </div>
-                                        </div>
-                                        <div className="dark-text">
-                                        <div className="location-address-container">
-                                            <div className="location-address">
-                                            <p className="address-text">
-                                                71 Fleming Crescent,<br />
-                                                Caledonia, ON, N3W 1V3
-                                            </p>
-                                            </div>
-                                        </div>
-                                        </div>
+                                {loadingOffices ? (
+                                    <div className="text-center py-5">
+                                        <LoaderSpinner style={{ width: "60px", height: "60px" }} />
+                                        <p className="mt-3">Loading office locations...</p>
                                     </div>
-                                </div>
-                                
-                                {/* India Location */}
-                                <div className="location-column mt-5">
-                                    <div className="location-content-center">
-                                        <div className="map-container">
-                                        <div className="map-inner">
-                                            <div className="map-wrapper">
-                                                <iframe 
-                                                    className="responsive-map"
-                                                    width="420" 
-                                                    height="334" 
-                                                    frameBorder="0" 
-                                                    scrolling="no" 
-                                                    marginHeight="0" 
-                                                    marginWidth="0" 
-                                                    id="gmap_canvas" 
-                                                    src="https://maps.google.com/maps?width=520&height=334&hl=en&q=528,%20Sector%2082,%20Area%20Mohali,%20Punjab%20140306%20Punjab+(ThinkBeyond%20Punjab%20India%20Address)&t=&z=12&ie=UTF8&iwloc=B&output=embed"
-                                                    title="Google Map"
-                                                ></iframe>
-                                                <noscript><iframe src="https://www.google.com/maps/embed/v1/place?q=Level+2%2F104+Frome+St%2C++++++++Adelaide+SA+5000&key=AIzaSyD09zQ9PNDNNy9TadMuzRV_UsPUoWKntt8" aria-hidden="true"></iframe></noscript>
+                                ) : offices.length > 0 ? (
+                                    offices.map((office, index) => (
+                                        <div key={office._id || index} className="location-column mt-5">
+                                            <div className={index % 2 === 0 ? "location-content" : "location-content-center"}>
+                                                <div className="map-container">
+                                                    <div className="map-inner">
+                                                        <div className="map-wrapper">
+                                                            <iframe 
+                                                                className="responsive-map"
+                                                                width="420" 
+                                                                height="334" 
+                                                                frameBorder="0" 
+                                                                scrolling="no" 
+                                                                marginHeight="0" 
+                                                                marginWidth="0" 
+                                                                src={generateMapUrl(office)}
+                                                                title={`Google Map for ${office.location.city}`}
+                                                                loading="lazy"
+                                                            ></iframe>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div className="red-text">
+                                                    <div className="location-title-container">
+                                                        <h2 className="location-title">
+                                                            <span className="red-text">
+                                                                {office.location.state}, {office.location.country}
+                                                            </span>
+                                                        </h2>
+                                                    </div>
+                                                </div>
+                                                <div className="dark-text">
+                                                    <div className="location-address-container">
+                                                        <div className="location-address">
+                                                            <p className="address-text">
+                                                                {office.location.address}<br />
+                                                                {office.location.city}, {office.location.state}<br />
+                                                                {office.location.postalCode}
+                                                            </p>
+                                                            {office.phone && (
+                                                                <p className="contact-text mt-2">
+                                                                    <strong>Phone:</strong> <a href={`tel:${office.phone}`}>{office.phone}</a>
+                                                                </p>
+                                                            )}
+                                                            {office.email && (
+                                                                <p className="contact-text">
+                                                                    <strong>Email:</strong> <a href={`mailto:${office.email}`}>{office.email}</a>
+                                                                </p>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                </div>
                                             </div>
                                         </div>
-                                        </div>
-                                        <div className="red-text">
-                                        <div className="location-title-container">
-                                            <h2 className="location-title">
-                                            <span className="red-text">India</span>
-                                            </h2>
-                                        </div>
-                                        </div>
-                                        <div className="dark-text">
-                                        <div className="location-address-container">
-                                            <div className="location-address">
-                                            <p className="address-text">
-                                                528, Sector 82, Area <br />
-                                                Mohali, Punjab 140306
-                                            </p>
-                                            </div>
-                                        </div>
-                                        </div>
+                                    ))
+                                ) : (
+                                    <div className="text-center py-5">
+                                        <h3>No office locations available</h3>
+                                        <p>Please check back later for updated office information.</p>
                                     </div>
-                                </div>
-                                
-                                {/* New York Location */}
-                                <div className="location-column mt-5">
-                                    <div className="location-content-center">
-                                        <div className="map-container">
-                                        <div className="map-inner">
-                                            <div className="map-wrapper">
-                                                <iframe 
-                                                    className="responsive-map"
-                                                    width="420" 
-                                                    height="334" 
-                                                    frameBorder="0" 
-                                                    scrolling="no" 
-                                                    marginHeight="0" 
-                                                    marginWidth="0" 
-                                                    id="gmap_canvas" 
-                                                    src="https://maps.google.com/maps?width=520&height=334&hl=en&q=3013%20Durango%20Hills%20Dr,%20Leander,%20TX%2078641%20Leander+(ThinkBeyond%20US%20Address)&t=&z=12&ie=UTF8&iwloc=B&output=embed" 
-                                                    title="Google Map"
-                                                ></iframe>
-                                                <noscript><iframe src="https://www.google.com/maps/embed/v1/place?q=Level+2%2F104+Frome+St%2C++++++++Adelaide+SA+5000&key=AIzaSyD09zQ9PNDNNy9TadMuzRV_UsPUoWKntt8" aria-hidden="true"></iframe></noscript>
-                                            </div>
-                                        </div>
-                                        </div>
-                                        <div className="red-text">
-                                        <div className="location-title-container">
-                                            <h2 className="location-title">
-                                            <span className="red-text">New York US</span>
-                                            </h2>
-                                        </div>
-                                        </div>
-                                        <div className="dark-text">
-                                        <div className="location-address-container">
-                                            <div className="location-address">
-                                            <p className="address-text">
-                                                3013 Durango Hills Dr,<br />
-                                                Leander, TX 78641
-                                            </p>
-                                            </div>
-                                        </div>
-                                        </div>
-                                    </div>
-                                </div>
+                                )}
                             </div>
                         </div>
                     </div>

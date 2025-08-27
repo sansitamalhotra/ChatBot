@@ -294,6 +294,8 @@ function App() {
             <Route path="/Super-Admin/Manage-Sectors" element={<ManageAdminTestSectors />} />
             <Route path="/Super-Admin/Add-Salary" element={<AddTestSalary />} />
             <Route path="/Super-Admin/Manage-salaries" element={<ManageAdminTestSalaries />} />
+
+            <Route path="/Super-Admin/Manage-BusinessHours" element={<ManageBusinessHours />}/>
             
             <Route path="/Super-Admin/All-Contact-Us-Messages" element={<AllContactUsMessages />} />
             <Route path="/Super-Admin/View-Contact-Message/:id" element={<TestViewContactMessage />} />

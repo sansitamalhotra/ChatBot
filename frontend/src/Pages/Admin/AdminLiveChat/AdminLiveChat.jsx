@@ -126,14 +126,30 @@ const AdminLiveChat = () => {
       }
     };
 
+    const handleSocketError = (error) => {
+      console.error('Socket error:', error);
+      setError(error.message || 'Connection error occurred');
+      setIsSending(false);
+    };
+
+    const handleMessageStatus = (data) => {
+      if (data.status === 'delivered') {
+        console.log('Message delivered:', data.messageId);
+      }
+    };
+
     socket.on('message:new', handleNewMessage);
     socket.on('session:updated', handleSessionUpdate);
     socket.on('user:typing', handleUserTyping);
+    socket.on('error', handleSocketError);
+    socket.on('message:status', handleMessageStatus);
 
     return () => {
       socket.off('message:new', handleNewMessage);
       socket.off('session:updated', handleSessionUpdate);
       socket.off('user:typing', handleUserTyping);
+      socket.off('error', handleSocketError);
+      socket.off('message:status', handleMessageStatus);
       
       // Leave the session room
       socket.emit('admin:leave_session', { sessionId, adminId: adminUser._id });
@@ -145,44 +161,41 @@ const AdminLiveChat = () => {
     scrollToBottom();
   }, [messages, scrollToBottom]);
 
-  // Send message - FIXED VERSION
+  // Send message - SOCKET VERSION
   const sendMessage = useCallback(async (e) => {
     e.preventDefault();
     
-    if (!newMessage.trim() || isSending) return;
+    if (!newMessage.trim() || isSending || !socket?.connected) return;
 
     const messageText = newMessage.trim();
     setNewMessage('');
     setIsSending(true);
 
     try {
-      // Determine sender model based on admin user type
-      const senderModel = 'User'; // Since admin is a User in your schema
-      
-      const response = await API.post('/api/v1/admin/chat/message', {
+      // Send via socket for real-time messaging
+      socket.emit('admin:send_message', {
         sessionId,
         message: messageText,
-        senderType: 'agent',
-        senderId: adminUser._id,
-        senderModel: senderModel // ADD THIS REQUIRED FIELD
+        adminId: adminUser._id,
+        messageType: 'text'
       });
 
-      if (response.data.success) {
-        // Message will be added via socket event
-        console.log('Message sent successfully');
-      } else {
-        throw new Error(response.data.message || 'Failed to send message');
-      }
+      // Message will be added via 'message:new' socket event
+      console.log('Message sent via socket successfully');
+      
+      // Reset sending state after a short delay to prevent rapid sends
+      setTimeout(() => {
+        setIsSending(false);
+      }, 500);
+      
     } catch (error) {
       console.error('Error sending message:', error);
-      const errorMessage = error.response?.data?.message || error.message || 'Failed to send message';
-      setError(errorMessage);
-      // Restore message text
+      setError('Failed to send message');
+      // Restore message text on error
       setNewMessage(messageText);
-    } finally {
       setIsSending(false);
     }
-  }, [newMessage, isSending, sessionId, adminUser]);
+  }, [newMessage, isSending, sessionId, adminUser, socket]);
 
   // End session
   const endSession = useCallback(async () => {

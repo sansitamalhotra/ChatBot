@@ -3,6 +3,11 @@ const mongoose = require('mongoose');
 const { Schema } = mongoose;
 
 const businessHoursSchema = new Schema({
+  officeId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'OurOffices',
+    required: false // Optional for now
+  },
   timezone: {
     type: String,
     default: 'America/New_York',

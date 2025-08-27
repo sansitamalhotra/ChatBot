@@ -71,7 +71,7 @@ async function fetchBusinessHours() {
 }
 
 const ChatBotIcon = () => {
-  const { socket, isConnected } = useSocket();
+  const { socket, isConnected, ensureSocketConnection } = useSocket();
   const [auth] = useAuth();
   const userFromAuth = auth?.user;
   const navigate = useNavigate();
@@ -731,7 +731,8 @@ const ChatBotIcon = () => {
         metadata: {
           guestFirstName: firstName,
           guestLastName: lastName,
-          guestPhone: phone
+          guestPhone: phone,
+          isGuest: true
         }
       };
     }
@@ -849,6 +850,12 @@ const ChatBotIcon = () => {
         console.log('Guest form submitted, creating session...');
         if (socket && socket.connected && !session && !isQuitting) {
           await createSession();
+        } else {
+          console.log('Socket connection status:', {
+            hasSocket: !!socket,
+            isConnected: socket?.connected,
+            hasSession: !!session
+          });
         }
 
         // Retain the user's last message (if any) and re-add the welcome message

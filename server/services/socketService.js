@@ -21,7 +21,7 @@ const { logWithIcon } = require('./consoleIcons');
 const ChatMessageController = require('../controllers/chatMessageController');
 const businessHoursAdapter = require('./businessHoursAdapter');
 const chatTemplateCache = require('./chatTemplateCache');
-const { registerAdminChatHandler } = require('./adminChatHandlers');
+const { registerAdminChatHandlers } = require('./adminChatHandlers');
 const { notifyAdminsOfPendingRequest, generateUniqueAgentUrl } = require('./adminNotificationService');
 
 const VALID_STATUSES = ['offline', 'online', 'active', 'idle', 'away'];
@@ -1496,8 +1496,24 @@ const handleJoinSession = async (socket, io, { sessionId }, ack) => {
   }
 };
 
+const handleSessionEnd = async (socket, io, { sessionId }, ack) => {
+  logWithIcon.info(`Session ending: ${sessionId}`);
+  try {
+    const session = await ChatSession.findById(sessionId);
+    if (!session) return ack && ack({ error: 'Session not found' });
+
+    // Notify all participants about the session ending
+    io.to(`session:${sessionId}`).emit('session:ended', { sessionId });
+    if (ack) ack(null, { success: true });
+  } catch (err) {
+    logWithIcon.error('handleSessionEnd error:', err);
+    if (ack) ack({ error: err.message || 'Error ending session' });
+  }
+};
+
 // Setup socket handlers (single consolidated function)
 const setupSocketHandlers = (io) => {
+
   io.on('connection', async (socket) => {
     // Attach business hours info
     try {
@@ -1513,6 +1529,12 @@ const setupSocketHandlers = (io) => {
     // handle incoming connection
     await handleConnection(socket, io);
 
+    // Register admin chat handlers for admin users
+    if (socket.user && socket.user.role === 1) {
+      console.log(`Registering admin chat handlers for admin: ${socket.user.firstname} ${socket.user.lastname}`);
+      registerAdminChatHandlers(io, socket);
+    }
+
     // Activity events
     socket.on('user:activity', async (data) => { await handleUserActivity(socket, io, data); });
     socket.on('activity:specific', async (data) => { await handleSpecificActivity(socket, io, data); });
@@ -1521,6 +1543,7 @@ const setupSocketHandlers = (io) => {
     socket.on('session:create', async (payload, ack) => { await handleChatSessionCreate(socket, io, payload, ack); });
     socket.on('session:join', async (payload, ack) => { await handleJoinSession(socket, io, payload, ack); });
     socket.on('message:send', async (payload, ack) => { await handleMessageSend(socket, io, payload, ack); });
+    socket.on('session:end', async (payload, ack) => { await handleSessionEnd(socket, io, payload, ack); });
 
     // Agent events
     socket.on('agent:accept', async (payload, ack) => { await handleAgentAcceptSession(socket, io, payload, ack); });

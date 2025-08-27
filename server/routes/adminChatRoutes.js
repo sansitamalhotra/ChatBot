@@ -382,16 +382,13 @@ router.post('/message', requireLogin, isAdminOrSuperAdmin, async (req, res) => {
     };
     session.lastMessageAt = newMessage.timestamp;
     session.updatedAt = new Date();
-    
     // If this is the first admin message, mark session as active
     if (senderType === 'agent' && session.status === 'waiting') {
       session.status = 'active';
       session.agentId = req.user._id;
       session.assignedAt = new Date();
     }
-    
     await session.save();
-
     // Emit socket event if socket.io is available
     try {
       if (req.app.get('io')) {
@@ -426,6 +423,9 @@ router.post('/message', requireLogin, isAdminOrSuperAdmin, async (req, res) => {
         }
 
         logWithIcon.success('Message broadcasted via socket', { sessionId, messageId: newMessage._id });
+      }
+      else {
+        console.info("Socket.io instance not found on app");
       }
     } catch (socketErr) {
       logWithIcon.warning('Failed to emit socket event for message:', socketErr.message);

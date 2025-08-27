@@ -59,7 +59,8 @@ const userSchema = new mongoose.Schema({
   },
   photo: {
     type: String,
-    default: "https://img.freepik.com/premium-vector/account-icon-user-icon-vector-graphics_292645-552.jpg?w=300",
+    default:
+      "https://img.freepik.com/premium-vector/account-icon-user-icon-vector-graphics_292645-552.jpg?w=300",
   },
   createdAt: {
     type: Date,
@@ -91,27 +92,27 @@ const userSchema = new mongoose.Schema({
       ref: "Skill",
     },
   ],
-  
+
   appliedJobs: [
     {
       type: mongoose.Schema.Types.ObjectId,
       ref: "ApplicantJobApplication",
     },
   ],
-  resumes: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Resume' }],
+  resumes: [{ type: mongoose.Schema.Types.ObjectId, ref: "Resume" }],
   status: {
     type: String,
-    enum: ['register', 'login', 'logout', 'blocked'],
-    default: 'register'
+    enum: ["register", "login", "logout", "blocked"],
+    default: "register",
   },
   currentSessionId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "ActivitySession",
-    default: null
+    default: null,
   },
   lastActivity: {
     type: Date,
-    default: Date.now
+    default: Date.now,
   },
   // currentStatus: {
   //   type: String,
@@ -131,15 +132,15 @@ const userSchema = new mongoose.Schema({
   },
   totalWorkTime: {
     type: Number, // Total work time in milliseconds
-    default: 0
+    default: 0,
   },
   violationCount: {
     type: Number,
-    default: 0
+    default: 0,
   },
   lastViolation: {
     type: Date,
-    default: null
+    default: null,
   },
   lastKnownIP: {
     type: String,

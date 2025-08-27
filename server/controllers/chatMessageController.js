@@ -7,6 +7,7 @@ const LiveAgent = require('../models/liveAgentModel');
 const BusinessHours = require('../models/businessHoursModel');
 const encryptionService = require('../services/encryptionService');
 const { formatQuickReplies } = require('../services/socketService');
+const sendLiveAgentNotification = require('../services/liveAgentEmailService');
 
 const {
     logWithIcon
@@ -733,6 +734,9 @@ class ChatMessageController {
 
     static async handleOptionSelection(session, selectedOption, isBusinessHours) {
         try {
+            // Map selected option to default options
+            selectedOption = selectedOption.replace(/\s+/g, "_").toLowerCase();
+            selectedOption = selectedOption === "talk_to_agent" ? "live_agent" : selectedOption;
             // Default responses with properly formatted quickReplies
             const defaultResponses = {
                 search_job: {
@@ -765,6 +769,18 @@ class ChatMessageController {
                 message: "How can I assist you with that?",
                 quickReplies: ['Search Jobs', 'Partnership Info', 'Talk to Agent']
             };
+
+            
+            if (selectedOption === "live_agent") {
+                logWithIcon.info(`Sending email for live agent request for session: ${session._id}`);
+                const emailMessage = "A user has requested to speak with a live agent.";
+                const chatLink = `${process.env.FRONTEND_BASE_URL}/Admin/chat/${session._id}`;
+
+                // Send live agent notification email
+                await sendLiveAgentNotification(emailMessage, chatLink);
+                logWithIcon.success(`Live agent notification sent successfully for session: ${session._id}`);
+
+            }
             
             return {
                 message: response.message,

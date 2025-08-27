@@ -1,5 +1,6 @@
 //server/controllers/businessHoursController.js
 const BusinessHours = require('../models/businessHoursModel');
+const OurOffices = require('../models/officeModel');
 const { businessHoursUtil } = require('../utils/businessHours');
 const moment = require('moment-timezone');
 
@@ -45,7 +46,7 @@ class BusinessHoursController {
     // For Adding Business Hours Configuration
     static async addBusinessHours(req, res) {
         try {
-            const { timezone, workingHours, workingDays, holidays, outsideHoursMessage, outsideHoursOptions, settings } = req.body;
+            const { officeId, timezone, workingHours, workingDays, holidays, outsideHoursMessage, outsideHoursOptions, settings } = req.body;
             const createdBy = req.user?.id;
 
             const validationErrors = businessHoursUtil.validateConfig(req.body);
@@ -60,6 +61,7 @@ class BusinessHoursController {
             await BusinessHours.updateMany({ isActive: true }, { isActive: false });
             
             const businessHours = new BusinessHours({
+                officeId,
                 timezone,
                 workingHours,
                 workingDays,
@@ -73,6 +75,11 @@ class BusinessHoursController {
 
             await businessHours.save();
             businessHoursUtil.clearCache();
+            
+            // Update office to reference these business hours
+            await OurOffices.findByIdAndUpdate(officeId, { 
+                businessHours: businessHours._id 
+            });
             
             res.status(201).json({
                 success: true,

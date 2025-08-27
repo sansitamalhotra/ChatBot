@@ -79,21 +79,29 @@ app.use(cors({
 }));
 
 // --- SOCKET.IO SETUP ---
-const io = new Server(server, {
-  cors: {
-    origin: allowedOrigins,
-    methods: ['GET', 'POST', 'PUT'],
-    credentials: true,
-  },
-  pingTimeout: 60000, // 60 seconds
-  pingInterval: 25000  // 25 seconds
-});
+// const io = new Server(server, {
+//   cors: {
+//     origin: allowedOrigins,
+//     methods: ['GET', 'POST', 'PUT'],
+//     credentials: true,
+//   },
+//   pingTimeout: 60000, // 60 seconds
+//   pingInterval: 25000  // 25 seconds
+// });
 
 app.use((req, res, next) => {
   req.app.set('socketio', io);
   next();
 });
 
+// Socket.IO Configuration for Employee Utility Time Optimization Phase 2
+const io = new Server(server, {
+  cors: {
+    origin: allowedOrigins,
+    methods: ['GET', 'POST', 'PUT'],
+    credentials: true,
+  }
+});
 
 // Socket Authentication Middleware
 io.use(async (socket, next) => {
@@ -174,6 +182,11 @@ io.on('connection', (socket) => {
   socket.on('ping', (timestamp) => {
     socket.emit('pong', timestamp);
   });
+
+  // Handle connection errors
+  socket.on('error', (error) => {
+    console.error(`Socket error for user ${userId}:`, error);
+  });
 });
 
 setupSocketHandlers(io);
@@ -209,6 +222,7 @@ app.use("/api/v1/subscribers", require("./routes/subscribeRoutes"));
 app.use("/api/v1/users", require("./routes/userRoutes"));
 app.use("/api/v1/photo", require("./routes/uploadUserPhotoRoutes"));
 
+app.use("/api/v1/offices", require("./routes/officeRoutes"));
 app.use("/api/v1/businessHours", require("./routes/businessHoursRoutes"));
 app.use("/api/v1/onlineStatus", require("./routes/onlineStatusRoutes"));
 app.use("/api/v1/guestUsers", require("./routes/guestUserRoutes"));
@@ -269,6 +283,18 @@ app.get("/health", (req, res) => {
 });
 
 
+
+// Health check endpoint
+app.get("/health", (req, res) => {
+  res.status(200).json({
+    status: 'healthy',
+    timestamp: new Date().toISOString(),
+    environment,
+    port: PORT
+  });
+});
+
+
 app.get("/", (req, res) => {
   res.send(
     `<h2 style="color: darkBlue;">ProsoftSynergies Database is Now Connected Successfully on Port ${PORT} ${environment} Mode </h2>`
@@ -276,31 +302,32 @@ app.get("/", (req, res) => {
 });
 
 
-
 // NOW serve frontend static files AFTER API routes are defined
 app.use(express.static(staticPaths.frontend));
-logWithIcon.success(`Serving Frontend Static Files From: ${staticPaths.frontend}`);
+logWithIcon.success(
+  `Serving Frontend Static Files From: ${staticPaths.frontend}`
+);
 
 // This should be after all API routes - catch-all for SPA navigation
-app.get('*', (req, res) => {
+app.get("*", (req, res) => {
   // Check for API requests to avoid serving HTML for API paths
-  if (req.path.startsWith('/api/')) {
+  if (req.path.startsWith("/api/")) {
     return res.status(404).json({
       success: false,
-      message: "API EndPoint Not Found"
+      message: "API EndPoint Not Found",
     });
   }
-  
+
   // Check if the file exists in the frontend build directory
   const requestedFile = path.join(staticPaths.frontend, req.path);
-  
+
   if (fs.existsSync(requestedFile) && fs.statSync(requestedFile).isFile()) {
     return res.sendFile(requestedFile);
   }
-  
+
   // Otherwise, serve the index.html for client-side routing
-  const indexPath = path.join(staticPaths.frontend, 'index.html');
-  
+  const indexPath = path.join(staticPaths.frontend, "index.html");
+
   // Check if index.html exists before serving
   if (fs.existsSync(indexPath)) {
     return res.sendFile(indexPath);
